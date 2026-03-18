@@ -221,6 +221,15 @@ function switchView(view) {
     if (document.getElementById('viewTitle')) {
         document.getElementById('viewTitle').innerHTML = titles[view];
     }
+
+    // อัปเดตสถานะ Active ใน Sidebar
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('onclick').includes(`'${view}'`)) {
+            item.classList.add('active');
+        }
+    });
     
     // ปิดเมนูอัตโนมัติเมื่อเลือกหน้า
     toggleSidebar();
@@ -722,14 +731,62 @@ function addTransactionItemRow(index) {
     newRow.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;"><strong>รายการที่ ${index}</strong></div>
         <div class="modal-grid">
-            <div class="form-group"><label>Category ID</label><input type="text" class="itm-id-cat" required></div>
-            <div class="form-group"><label>Category Name</label><input type="text" class="itm-cat-name"></div>
-            <div class="form-group"><label>Asset Code</label><input type="text" class="itm-asset" required></div>
-            <div class="form-group"><label>Inventory Code</label><input type="text" class="itm-inv" required></div>
-            <div class="form-group full-width"><label>Description</label><input type="text" class="itm-desc" required></div>
+            <div class="form-group"><label>Category ID</label><input type="text" class="itm-id-cat" disabled required></div>
+            <div class="form-group"><label>Category Name</label><input type="text" class="itm-cat-name" disabled></div>
+            <div class="form-group"><label>Asset Code</label><input type="text" class="itm-asset" onblur="lookupItemMaster(this, 'asset')" required></div>
+            <div class="form-group"><label>Inventory Code</label><input type="text" class="itm-inv" onblur="lookupItemMaster(this, 'inv')" required></div>
+            <div class="form-group full-width"><label>Description</label><input type="text" class="itm-desc" disabled required></div>
         </div>
     `;
     container.appendChild(newRow);
+}
+
+async function lookupItemMaster(input, type) {
+    const row = input.closest('.transaction-item-row') || input.closest('.modal-grid');
+    if (!row) return;
+
+    const value = input.value.trim();
+    if (!value) return;
+
+    const assetInput = row.querySelector('.itm-asset') || row.querySelector('#edit_itm_asset');
+    const invInput = row.querySelector('.itm-inv') || row.querySelector('#edit_itm_inv');
+    const idCatInput = row.querySelector('.itm-id-cat') || row.querySelector('#edit_itm_id_cat');
+    const catNameInput = row.querySelector('.itm-cat-name') || row.querySelector('#edit_itm_cat_name');
+    const descInput = row.querySelector('.itm-desc') || row.querySelector('#edit_itm_desc');
+
+    try {
+        let query = _supabase.from('Item Master').select('*');
+        if (type === 'asset') query = query.eq('asset_code', value);
+        else query = query.eq('inventory_code', value);
+
+        const { data, error } = await query.single();
+        if (error) {
+            if (error.code === 'PGRST116') {
+                console.warn('Item not found in Item Master');
+            } else {
+                throw error;
+            }
+            return;
+        }
+
+        if (data) {
+            if (idCatInput) idCatInput.value = data.category_id || '';
+            if (descInput) descInput.value = data.description || '';
+            if (type === 'asset') {
+                if (invInput) invInput.value = data.inventory_code || '';
+            } else {
+                if (assetInput) assetInput.value = data.asset_code || '';
+            }
+
+            // Fetch category name
+            if (data.category_id && catNameInput) {
+                const { data: catData } = await _supabase.from('Category Master').select('category_name').eq('id', data.category_id).single();
+                if (catData) catNameInput.value = catData.category_name || '';
+            }
+        }
+    } catch (err) {
+        console.error('Error looking up item:', err);
+    }
 }
 
 async function openTransactionModal(item, mode) {
@@ -757,23 +814,23 @@ async function openTransactionModal(item, mode) {
                     <div class="form-group"><label>Transaction Code</label><input type="text" id="tr_code" value="${item ? (item.code || '') : autoCode}" disabled required></div>
                     <div class="form-group">
                         <label>Movement Type</label>
-                        <select id="tr_type" ${mode === 'transfer' || !isEditMode ? 'disabled' : ''}>
-                            <option value="ยืม" ${mode !== 'transfer' && item && item.movement_type === 'ยืม' ? 'selected' : ''}>ยืม</option>
-                            <option value="จัดสรร" ${mode !== 'transfer' && item && item.movement_type === 'จัดสรร' ? 'selected' : ''}>จัดสรร</option>
-                            <option value="ตัดจำหน่าย" ${mode !== 'transfer' && item && item.movement_type === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
-                            <option value="ย้ายของ" ${mode === 'transfer' || (item && item.movement_type === 'ย้ายของ') ? 'selected' : ''}>ย้ายของ</option>
+                        <select id="tr_type" ${!isEditMode ? 'disabled' : ''}>
+                            <option value="ยืม" ${item && item.movement_type === 'ยืม' ? 'selected' : ''}>ยืม</option>
+                            <option value="จัดสรร" ${item && item.movement_type === 'จัดสรร' ? 'selected' : ''}>จัดสรร</option>
+                            <option value="ตัดจำหน่าย" ${item && item.movement_type === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
+                            <option value="ย้ายของ" ${item && item.movement_type === 'ย้ายของ' ? 'selected' : ''}>ย้ายของ</option>
                         </select>
                     </div>
                     <div class="form-group"><label>From Zone</label><input type="text" id="tr_from_zone" value="${item ? (item.from_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>To Location (โซนใหม่)</label><input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group">
                         <label>Status</label>
-                        <select id="tr_status" ${mode === 'transfer' || !isEditMode ? 'disabled' : ''}>
+                        <select id="tr_status" ${!isEditMode ? 'disabled' : ''}>
                             <option value="กำลังยืม" ${item && item.status === 'กำลังยืม' ? 'selected' : ''}>กำลังยืม</option>
                             <option value="คืนของแล้ว" ${item && item.status === 'คืนของแล้ว' ? 'selected' : ''}>คืนของแล้ว</option>
                             <option value="จัดสรรอยู่" ${item && item.status === 'จัดสรรอยู่' ? 'selected' : ''}>จัดสรรอยู่</option>
                             <option value="ตัดจำหน่าย" ${item && item.status === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
-                            <option value="ย้ายของ" ${mode === 'transfer' || (item && item.status === 'ย้ายของ') ? 'selected' : ''}>ย้ายของ</option>
+                            <option value="ย้ายของ" ${item && item.status === 'ย้ายของ' ? 'selected' : ''}>ย้ายของ</option>
                         </select>
                     </div>
                     ${mode === 'add' || mode === 'transfer' ? `<div class="form-group"><label>Quantity (จำนวนรายการ)</label><input type="number" id="tr_qty" value="1" min="1" oninput="handleQuantityChange(this.value)"></div>` : ''}
@@ -796,7 +853,13 @@ async function openTransactionModal(item, mode) {
                                 <tbody>${sameCodeItems.map(row => `<tr style="${row.id === (item ? item.id : null) ? 'background: rgba(52, 152, 219, 0.1);' : ''}"><td>${row.asset_code}</td><td>${row.inventory_code}</td><td>${row.description}</td>${mode === 'edit' ? `<td><button type="button" class="icon-btn delete-icon" onclick="deleteTransactionRecord('${row.id}')">🗑</button></td>` : ''}</tr>`).join('')}</tbody>
                             </table>
                         </div>
-                        ${mode === 'edit' ? `<div id="editSingleItemFields" style="background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 12px;"><p style="font-weight: 600; margin-bottom: 10px;">แก้ไขรายการที่เลือก (${item.asset_code})</p><div class="modal-grid"><div class="form-group"><label>Category ID</label><input type="text" id="edit_itm_id_cat" value="${item.id_category || ''}"></div><div class="form-group"><label>Asset Code</label><input type="text" id="edit_itm_asset" value="${item.asset_code || ''}"></div><div class="form-group"><label>Inventory Code</label><input type="text" id="edit_itm_inv" value="${item.inventory_code || ''}"></div><div class="form-group full-width"><label>Description</label><input type="text" id="edit_itm_desc" value="${item.description || ''}"></div></div></div>` : ''}
+                        ${mode === 'edit' ? `<div id="editSingleItemFields" style="background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 12px;"><p style="font-weight: 600; margin-bottom: 10px;">แก้ไขรายการที่เลือก (${item.asset_code})</p><div class="modal-grid">
+                            <div class="form-group"><label>Category ID</label><input type="text" id="edit_itm_id_cat" value="${item.id_category || ''}" disabled></div>
+                            <div class="form-group"><label>Category Name</label><input type="text" id="edit_itm_cat_name" value="${item.category || ''}" disabled></div>
+                            <div class="form-group"><label>Asset Code</label><input type="text" id="edit_itm_asset" value="${item.asset_code || ''}" onblur="lookupItemMaster(this, 'asset')"></div>
+                            <div class="form-group"><label>Inventory Code</label><input type="text" id="edit_itm_inv" value="${item.inventory_code || ''}" onblur="lookupItemMaster(this, 'inv')"></div>
+                            <div class="form-group full-width"><label>Description</label><input type="text" id="edit_itm_desc" value="${item.description || ''}" disabled></div>
+                        </div></div>` : ''}
                     `}
                 </div>
                 <div class="modal-footer">${!isEditMode ? `<button type="button" class="btn-cancel" onclick="closeModal('transactionModal')">ปิดหน้าต่าง</button>` : `<button type="button" class="btn-cancel" onclick="closeModal('transactionModal')">ยกเลิก</button><button type="button" class="btn-save" onclick="saveTransactionRecord('${mode}')">บันทึกข้อมูล</button>`}</div>
@@ -861,7 +924,7 @@ async function saveTransactionRecord(mode) {
             alert(`${mode === 'transfer' ? 'ย้ายของ' : 'เพิ่มรายการ'} สำเร็จ!`);
         } else {
             const oldItem = editingTransactionItem;
-            const updateData = { ...commonData, id_category: document.getElementById('edit_itm_id_cat').value, asset_code: document.getElementById('edit_itm_asset').value, inventory_code: document.getElementById('edit_itm_inv').value, description: document.getElementById('edit_itm_desc').value };
+            const updateData = { ...commonData, id_category: document.getElementById('edit_itm_id_cat').value, category: document.getElementById('edit_itm_cat_name').value, asset_code: document.getElementById('edit_itm_asset').value, inventory_code: document.getElementById('edit_itm_inv').value, description: document.getElementById('edit_itm_desc').value };
             const { error } = await _supabase.from('Transection Inventory').update(updateData).eq('id', oldItem.id);
             if (error) throw error;
             if (status === 'คืนของแล้ว' && oldItem.status !== 'คืนของแล้ว') {
