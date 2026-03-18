@@ -247,13 +247,14 @@ function renderCurrentView() {
 // --- Inventory Master View ---
 function renderInventoryView() {
     const mainContent = document.getElementById('mainContent');
+    const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
     mainContent.innerHTML = `
         <div class="controls-row">
             <div class="search-filters">
                 <input type="text" id="searchZone" class="search-input" placeholder="🔍 ค้นหาด้วย Zone..." oninput="filterInventoryTable()">
                 <input type="text" id="searchDesc" class="search-input" placeholder="🔍 ค้นหาด้วย Description..." oninput="filterInventoryTable()">
             </div>
-            <button class="btn-add" onclick="openInventoryModal(null, 'add')"><span>➕</span> Add Inventory</button>
+            ${hasPermission ? `<button class="btn-add" onclick="openInventoryModal(null, 'add')"><span>➕</span> Add Inventory</button>` : ''}
         </div>
         <div class="table-wrapper">
             <table>
@@ -503,8 +504,24 @@ async function saveItemRecord(mode) {
     const assetCode = document.getElementById('itm_asset').value;
     const itemData = { inventory_code: document.getElementById('itm_inv').value, category_id: document.getElementById('itm_cat').value, description: document.getElementById('itm_desc').value, location_zone: document.getElementById('itm_zone').value, active: document.getElementById('itm_active').value === 'true', edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
     try {
-        if (mode === 'add') { itemData.asset_code = assetCode; itemData.create_id = currentUser.id; itemData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Item Master').insert([itemData]); if (error) throw error; alert('เพิ่มไอเทมใหม่สำเร็จ!'); }
-        else { const { error } = await _supabase.from('Item Master').update(itemData).eq('asset_code', assetCode); if (error) throw error; alert('แก้ไขไอเทมสำเร็จ!'); }
+        if (mode === 'add') {
+            itemData.asset_code = assetCode;
+            itemData.create_id = currentUser.id;
+            itemData.created_at = new Date().toLocaleString('th-TH');
+            const { error } = await _supabase.from('Item Master').insert([itemData]);
+            if (error) throw error;
+            
+            // Sync with Inventory Master
+            if (itemData.location_zone && itemData.description) {
+                await updateInventoryStock(itemData.location_zone, itemData.description, 1, itemData.category_id);
+            }
+            
+            alert('เพิ่มไอเทมใหม่สำเร็จ!');
+        } else {
+            const { error } = await _supabase.from('Item Master').update(itemData).eq('asset_code', assetCode);
+            if (error) throw error;
+            alert('แก้ไขไอเทมสำเร็จ!');
+        }
         closeModal('itemModal'); loadItemData();
     } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
 }
@@ -949,13 +966,14 @@ async function deleteTransactionRecord(id) {
 
 function renderUserView() {
     const mainContent = document.getElementById('mainContent');
+    const hasPermission = currentUser.rank === 'Master';
     mainContent.innerHTML = `
         <div class="controls-row">
             <div class="search-filters">
                 <input type="text" id="searchUserId" class="search-input" placeholder="🔍 ค้นหาด้วย User ID..." oninput="filterUserTable()">
                 <input type="text" id="searchUserName" class="search-input" placeholder="🔍 ค้นหาด้วยชื่อ..." oninput="filterUserTable()">
             </div>
-            <button class="btn-add" onclick="openUserModal(null, 'add')"><span>➕</span> Add User</button>
+            ${hasPermission ? `<button class="btn-add" onclick="openUserModal(null, 'add')"><span>➕</span> Add User</button>` : ''}
         </div>
         <div class="table-wrapper">
             <table>
