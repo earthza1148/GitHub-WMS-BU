@@ -18,7 +18,35 @@ let transactionData = [];
 let currentView = 'inventory';
 let editingTransactionItem = null;
 
-// --- Loading System ---
+// --- Pagination Settings ---
+const PAGE_SIZE = 500;
+let currentInventoryPage = 0;
+let currentItemPage = 0;
+let currentCategoryPage = 0;
+let currentTransactionPage = 0;
+let currentUserPage = 0;
+
+// Helper: สร้างปุ่ม Pagination
+function renderPagination(containerId, totalCount, currentPage, onPageChange) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+
+    let html = `
+        <button class="pagination-btn" ${currentPage === 0 ? 'disabled' : ''} onclick="${onPageChange}(0)">First</button>
+        <button class="pagination-btn" ${currentPage === 0 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage - 1})">Prev</button>
+        <span class="pagination-info">หน้า ${currentPage + 1} จาก ${totalPages} (ทั้งหมด ${totalCount.toLocaleString()} รายการ)</span>
+        <button class="pagination-btn" ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage + 1})">Next</button>
+        <button class="pagination-btn" ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="${onPageChange}(${totalPages - 1})">Last</button>
+    `;
+    container.innerHTML = html;
+}
+
 function initLoading() {
     if (!document.getElementById('loadingOverlay')) {
         const loading = document.createElement('div');
@@ -224,32 +252,54 @@ function renderInventoryView() {
                 <tbody id="inventoryTableBody"></tbody>
             </table>
         </div>
+        <div id="inventoryPagination" class="pagination-container"></div>
     `;
-    loadInventoryData();
+    loadInventoryData(0);
 }
 
-async function loadInventoryData() {
+async function loadInventoryData(page = 0) {
+    currentInventoryPage = page;
     const tableBody = document.getElementById('inventoryTableBody');
     if (!tableBody) return;
+
+    const searchZone = document.getElementById('searchZone')?.value || '';
+    const searchDesc = document.getElementById('searchDesc')?.value || '';
+
     tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
     try {
-        const { data, error } = await _supabase.from('Inventory Master').select('*').order('id', { ascending: true });
+        let query = _supabase.from('Inventory Master').select('*', { count: 'exact' });
+        
+        if (searchZone) query = query.ilike('zone', `%${searchZone}%`);
+        if (searchDesc) query = query.ilike('descriprion', `%${searchDesc}%`);
+
+        const { data, error, count } = await query
+            .order('id', { ascending: true })
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
         if (error) throw error;
-        inventoryData = data;
-        renderInventoryTable(data);
+        renderInventoryTable(data, count);
     } catch (err) {
         console.error("Error loading data:", err);
         tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>';
     }
 }
 
-function renderInventoryTable(data) {
+// Helper: เช็คว่ามีการลากเมาส์เลือกตัวหนังสืออยู่หรือไม่
+function isTextSelected() {
+    const selection = window.getSelection();
+    return selection.toString().length > 0;
+}
+
+function renderInventoryTable(data, totalCount) {
     const tableBody = document.getElementById('inventoryTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
+    
     data.forEach(item => {
         const tr = document.createElement('tr');
-        tr.onclick = () => openInventoryModal(item, 'view');
+        tr.onclick = () => {
+            if (!isTextSelected()) openInventoryModal(item, 'view');
+        };
         const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
         tr.innerHTML = `
             <td>${item.id}</td><td>${item.zone || '-'}</td><td>${item.descriprion || '-'}</td><td>${item.quantity || 0}</td>
@@ -260,17 +310,16 @@ function renderInventoryTable(data) {
         `;
         tableBody.appendChild(tr);
     });
+
+    renderPagination('inventoryPagination', totalCount, currentInventoryPage, 'loadInventoryData');
 }
 
+let inventoryFilterTimeout;
 function filterInventoryTable() {
-    const searchZone = document.getElementById('searchZone').value.toLowerCase();
-    const searchDesc = document.getElementById('searchDesc').value.toLowerCase();
-    const filtered = inventoryData.filter(item => {
-        const zoneMatch = (item.zone || '').toString().toLowerCase().includes(searchZone);
-        const descMatch = (item.descriprion || '').toLowerCase().includes(searchDesc);
-        return zoneMatch && descMatch;
-    });
-    renderInventoryTable(filtered);
+    clearTimeout(inventoryFilterTimeout);
+    inventoryFilterTimeout = setTimeout(() => {
+        loadInventoryData(0);
+    }, 500);
 }
 
 function updateImagePreview(url) {
@@ -348,48 +397,66 @@ function renderItemView() {
                 <tbody id="itemTableBody"></tbody>
             </table>
         </div>
+        <div id="itemPagination" class="pagination-container"></div>
     `;
-    loadItemData();
+    loadItemData(0);
 }
 
-async function loadItemData() {
+async function loadItemData(page = 0) {
+    currentItemPage = page;
     const tableBody = document.getElementById('itemTableBody');
     if (!tableBody) return;
+
+    const searchCode = document.getElementById('searchAssetInventory')?.value || '';
+    const searchDescCat = document.getElementById('searchItemDescCat')?.value || '';
+
     tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
     try {
-        const { data, error } = await _supabase.from('Item Master').select('*').order('asset_code', { ascending: true });
+        let query = _supabase.from('Item Master').select('*', { count: 'exact' });
+        
+        if (searchCode) {
+            query = query.or(`asset_code.ilike.%${searchCode}%,inventory_code.ilike.%${searchCode}%`);
+        }
+        if (searchDescCat) {
+            query = query.or(`description.ilike.%${searchDescCat}%,category_id.ilike.%${searchDescCat}%`);
+        }
+
+        const { data, error, count } = await query
+            .order('asset_code', { ascending: true })
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
         if (error) throw error;
-        itemMasterData = data; renderItemTable(data);
+        renderItemTable(data, count);
     } catch (err) { console.error("Error loading item data:", err); tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>'; }
 }
 
-function renderItemTable(data) {
+function renderItemTable(data, totalCount) {
     const tableBody = document.getElementById('itemTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
+    
     data.forEach(item => {
         const tr = document.createElement('tr');
-        tr.onclick = () => openItemModal(item, 'view');
+        tr.onclick = () => {
+            if (!isTextSelected()) openItemModal(item, 'view');
+        };
         tr.innerHTML = `
             <td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
     });
+
+    renderPagination('itemPagination', totalCount, currentItemPage, 'loadItemData');
 }
 
+let itemFilterTimeout;
 function filterItemTable() {
-    const searchCode = document.getElementById('searchAssetInventory').value.toLowerCase();
-    const searchDescCat = document.getElementById('searchItemDescCat').value.toLowerCase();
-    const filtered = itemMasterData.filter(item => {
-        const assetMatch = (item.asset_code || '').toLowerCase().includes(searchCode);
-        const inventoryMatch = (item.inventory_code || '').toLowerCase().includes(searchCode);
-        const descMatch = (item.description || '').toLowerCase().includes(searchDescCat);
-        const catMatch = (item.category_id || '').toString().toLowerCase().includes(searchDescCat);
-        return (assetMatch || inventoryMatch) && (descMatch || catMatch);
-    });
-    renderItemTable(filtered);
+    clearTimeout(itemFilterTimeout);
+    itemFilterTimeout = setTimeout(() => {
+        loadItemData(0);
+    }, 500);
 }
 
 function openItemModal(item, mode) {
@@ -458,45 +525,61 @@ function renderCategoryView() {
                 <tbody id="categoryTableBody"></tbody>
             </table>
         </div>
+        <div id="categoryPagination" class="pagination-container"></div>
     `;
-    loadCategoryData();
+    loadCategoryData(0);
 }
 
-async function loadCategoryData() {
+async function loadCategoryData(page = 0) {
+    currentCategoryPage = page;
     const tableBody = document.getElementById('categoryTableBody');
     if (!tableBody) return;
+
+    const searchId = document.getElementById('searchCatId')?.value || '';
+    const searchName = document.getElementById('searchCatName')?.value || '';
+
     tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
     try {
-        const { data, error } = await _supabase.from('Category Master').select('*').order('id', { ascending: true });
+        let query = _supabase.from('Category Master').select('*', { count: 'exact' });
+        
+        if (searchId) query = query.ilike('id', `%${searchId}%`);
+        if (searchName) query = query.ilike('category_name', `%${searchName}%`);
+
+        const { data, error, count } = await query
+            .order('id', { ascending: true })
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
         if (error) throw error;
-        categoryData = data; renderCategoryTable(data);
+        renderCategoryTable(data, count);
     } catch (err) { console.error("Error loading category data:", err); tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>'; }
 }
 
-function renderCategoryTable(data) {
+function renderCategoryTable(data, totalCount) {
     const tableBody = document.getElementById('categoryTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
+    
     data.forEach(item => {
         const tr = document.createElement('tr');
-        tr.onclick = () => openCategoryModal(item, 'view');
+        tr.onclick = () => {
+            if (!isTextSelected()) openCategoryModal(item, 'view');
+        };
         tr.innerHTML = `<td>${item.id}</td><td>${item.category_name || '-'}</td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openCategoryModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteCategoryItem('${item.id}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
     });
+
+    renderPagination('categoryPagination', totalCount, currentCategoryPage, 'loadCategoryData');
 }
 
+let categoryFilterTimeout;
 function filterCategoryTable() {
-    const searchId = document.getElementById('searchCatId').value.toLowerCase();
-    const searchName = document.getElementById('searchCatName').value.toLowerCase();
-    const filtered = categoryData.filter(item => {
-        const idMatch = (item.id || '').toString().toLowerCase().includes(searchId);
-        const nameMatch = (item.category_name || '').toLowerCase().includes(searchName);
-        return idMatch && nameMatch;
-    });
-    renderCategoryTable(filtered);
+    clearTimeout(categoryFilterTimeout);
+    categoryFilterTimeout = setTimeout(() => {
+        loadCategoryData(0);
+    }, 500);
 }
 
 function openCategoryModal(item, mode) {
@@ -563,47 +646,64 @@ function renderTransactionView() {
                 <tbody id="transactionTableBody"></tbody>
             </table>
         </div>
+        <div id="transactionPagination" class="pagination-container"></div>
     `;
-    loadTransactionData();
+    loadTransactionData(0);
 }
 
-async function loadTransactionData() {
+async function loadTransactionData(page = 0) {
+    currentTransactionPage = page;
     const tableBody = document.getElementById('transactionTableBody');
     if (!tableBody) return;
+
+    const searchCode = document.getElementById('searchTransCode')?.value || '';
+    const searchAsset = document.getElementById('searchTransAsset')?.value || '';
+
     tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
     try {
-        const { data, error } = await _supabase.from('Transection Inventory').select('*').order('id', { ascending: false });
+        let query = _supabase.from('Transection Inventory').select('*', { count: 'exact' });
+        
+        if (searchCode) query = query.ilike('code', `%${searchCode}%`);
+        if (searchAsset) {
+            query = query.or(`asset_code.ilike.%${searchAsset}%,inventory_code.ilike.%${searchAsset}%`);
+        }
+
+        const { data, error, count } = await query
+            .order('id', { ascending: false })
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
         if (error) throw error;
-        transactionData = data; renderTransactionTable(data);
+        renderTransactionTable(data, count);
     } catch (err) { console.error("Error loading transaction data:", err); tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>'; }
 }
 
-function renderTransactionTable(data) {
+function renderTransactionTable(data, totalCount) {
     const tableBody = document.getElementById('transactionTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
+    
     data.forEach(item => {
         const tr = document.createElement('tr');
-        tr.onclick = () => openTransactionModal(item, 'view');
+        tr.onclick = () => {
+            if (!isTextSelected()) openTransactionModal(item, 'view');
+        };
         tr.innerHTML = `
             <td>${item.id}</td><td><strong>${item.code || '-'}</strong></td><td>${item.id_category || '-'}</td><td>${item.asset_code || '-'}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td><span class="status-badge ${item.movement_type === 'ยืม' ? 'status-active' : (item.movement_type === 'จัดสรร' ? 'status-inactive' : (item.movement_type === 'ย้ายของ' ? 'status-active' : ''))}">${item.movement_type || '-'}</span></td><td>${item.to_location || '-'}</td><td>${item.status || '-'}</td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openTransactionModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteTransactionRecord('${item.id}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
     });
+
+    renderPagination('transactionPagination', totalCount, currentTransactionPage, 'loadTransactionData');
 }
 
+let transactionFilterTimeout;
 function filterTransactionTable() {
-    const searchCode = document.getElementById('searchTransCode').value.toLowerCase();
-    const searchAsset = document.getElementById('searchTransAsset').value.toLowerCase();
-    const filtered = transactionData.filter(item => {
-        const codeMatch = (item.code || '').toLowerCase().includes(searchCode);
-        const assetMatch = (item.asset_code || '').toLowerCase().includes(searchAsset);
-        const invMatch = (item.inventory_code || '').toLowerCase().includes(searchAsset);
-        return codeMatch && (assetMatch || invMatch);
-    });
-    renderTransactionTable(filtered);
+    clearTimeout(transactionFilterTimeout);
+    transactionFilterTimeout = setTimeout(() => {
+        loadTransactionData(0);
+    }, 500);
 }
 
 function handleQuantityChange(qty) {
@@ -787,37 +887,72 @@ async function deleteTransactionRecord(id) {
 function renderUserView() {
     const mainContent = document.getElementById('mainContent');
     mainContent.innerHTML = `
-        <div class="controls-row"><div class="search-filters"><input type="text" id="searchUserId" class="search-input" placeholder="🔍 ค้นหาด้วย User ID..." oninput="filterUserTable()"><input type="text" id="searchUserName" class="search-input" placeholder="🔍 ค้นหาด้วยชื่อ..." oninput="filterUserTable()"></div><button class="btn-add" onclick="openUserModal(null, 'add')"><span>➕</span> Add User</button></div>
-        <div class="table-wrapper"><table><thead><tr><th>ID</th><th>Name</th><th>User ID</th><th>Password</th><th>Rank</th><th>Status</th><th>Actions</th></tr></thead><tbody id="userTableBody"></tbody></table></div>
+        <div class="controls-row">
+            <div class="search-filters">
+                <input type="text" id="searchUserId" class="search-input" placeholder="🔍 ค้นหาด้วย User ID..." oninput="filterUserTable()">
+                <input type="text" id="searchUserName" class="search-input" placeholder="🔍 ค้นหาด้วยชื่อ..." oninput="filterUserTable()">
+            </div>
+            <button class="btn-add" onclick="openUserModal(null, 'add')"><span>➕</span> Add User</button>
+        </div>
+        <div class="table-wrapper">
+            <table>
+                <thead><tr><th>ID</th><th>Name</th><th>User ID</th><th>Password</th><th>Rank</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="userTableBody"></tbody>
+            </table>
+        </div>
+        <div id="userPagination" class="pagination-container"></div>
     `;
-    loadUserData();
+    loadUserData(0);
 }
 
-async function loadUserData() {
+async function loadUserData(page = 0) {
+    currentUserPage = page;
     const tableBody = document.getElementById('userTableBody');
     if (!tableBody) return;
+
+    const searchId = document.getElementById('searchUserId')?.value || '';
+    const searchName = document.getElementById('searchUserName')?.value || '';
+
     tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
-    try { const { data, error } = await _supabase.from('User Master').select('*').order('id', { ascending: true }); if (error) throw error; userMasterData = data; renderUserTable(data); }
+    try { 
+        let query = _supabase.from('User Master').select('*', { count: 'exact' });
+        
+        if (searchId) query = query.ilike('user_id', `%${searchId}%`);
+        if (searchName) query = query.ilike('name', `%${searchName}%`);
+
+        const { data, error, count } = await query
+            .order('id', { ascending: true })
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (error) throw error; 
+        renderUserTable(data, count); 
+    }
     catch (err) { console.error("Error loading data:", err); tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>'; }
 }
 
-function renderUserTable(data) {
+function renderUserTable(data, totalCount) {
     const tableBody = document.getElementById('userTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
+    
     data.forEach(item => {
         const tr = document.createElement('tr');
-        tr.onclick = () => openUserModal(item, 'view');
+        tr.onclick = () => {
+            if (!isTextSelected()) openUserModal(item, 'view');
+        };
         tr.innerHTML = `<td>${item.id}</td><td>${item.name || '-'}</td><td>${item.user_id || '-'}</td><td>${item.password || '****'}</td><td>${item.rank || '-'}</td><td><span class="status-badge ${item.status ? 'status-active' : 'status-inactive'}">${item.status ? 'Active' : 'Inactive'}</span></td><td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openUserModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteUserItem('${item.id}')">🗑</button></div></td>`;
         tableBody.appendChild(tr);
     });
+
+    renderPagination('userPagination', totalCount, currentUserPage, 'loadUserData');
 }
 
+let userFilterTimeout;
 function filterUserTable() {
-    const searchId = document.getElementById('searchUserId').value.toLowerCase();
-    const searchName = document.getElementById('searchUserName').value.toLowerCase();
-    const filtered = userMasterData.filter(item => { const idMatch = (item.user_id || '').toLowerCase().includes(searchId); const nameMatch = (item.name || '').toLowerCase().includes(searchName); return idMatch && nameMatch; });
-    renderUserTable(filtered);
+    clearTimeout(userFilterTimeout);
+    userFilterTimeout = setTimeout(() => {
+        loadUserData(0);
+    }, 500);
 }
 
 function openUserModal(item, mode) {

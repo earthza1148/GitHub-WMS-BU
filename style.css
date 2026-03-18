@@ -748,11 +748,57 @@ tr:hover td {
 .form-group select:disabled, 
 .form-group textarea:disabled {
     background: #f1f4f8 !important;
-    color: #94a3b8 !important;
+    color: #555555 !important;
     border-color: #e2e8f0 !important;
     cursor: not-allowed;
     border-style: dashed;
     opacity: 0.8;
+}
+
+/* --- Pagination --- */
+.pagination-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    padding: 15px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+
+.pagination-btn {
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    color: var(--bu-purple);
+    font-weight: 500;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: #f1f4f8;
+    border-color: var(--bu-purple);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #f8fafc;
+}
+
+.pagination-info {
+    font-size: 0.9rem;
+    color: #64748b;
+    font-weight: 400;
+}
+
+tbody tr {
+    cursor: pointer;
 }
 
 .modal-footer {
