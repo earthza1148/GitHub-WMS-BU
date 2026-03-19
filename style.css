@@ -117,9 +117,21 @@ body {
 /* --- Diamond Animation --- */
 .diamond-container {
     position: relative;
-    width: 80px;
-    height: 80px;
+    width: 120px;
+    height: auto;
     margin: 0 auto 1.5rem;
+}
+
+.login-logo {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 10px 20px rgba(58, 46, 91, 0.15));
+    animation: logoFloat 4s infinite ease-in-out;
+}
+
+@keyframes logoFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-10px) scale(1.02); }
 }
 
 .diamond {
@@ -328,6 +340,7 @@ body {
     flex-direction: column;
     box-shadow: 30px 0 80px rgba(0,0,0,0.05);
     border-right: 1px solid var(--glass-border);
+    overflow-y: auto; /* Enable vertical scrolling */
 }
 
 .sidebar.open { transform: translateX(0); }
@@ -339,12 +352,12 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 20px;
+    padding: 10px 15px;
     background: rgba(238, 82, 83, 0.08);
     color: #ee5253;
-    border-radius: 15px;
+    border-radius: 12px;
     font-weight: 700;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     cursor: pointer;
     transition: var(--transition-smooth);
     border: 1px solid rgba(238, 82, 83, 0.1);
@@ -357,46 +370,47 @@ body {
     box-shadow: 0 10px 20px rgba(238, 82, 83, 0.2);
 }
 
-.logout-top span { font-size: 1.2rem; }
+.logout-top span { font-size: 1rem; }
 
 .sidebar-header {
-    padding: 120px 40px 40px;
+    padding: 100px 30px 30px;
     text-align: left;
 }
 
 .sidebar-header h2 {
-    font-size: 2.2rem;
+    font-size: 1.4rem; /* Smaller font size as requested */
     font-weight: 800;
     color: var(--bu-purple);
-    letter-spacing: -1px;
+    letter-spacing: -0.5px;
+    line-height: 1.2;
 }
 
 .sidebar-header p {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     color: var(--bu-orange);
     text-transform: uppercase;
-    letter-spacing: 3px;
+    letter-spacing: 2px;
     margin-top: 5px;
     font-weight: 700;
 }
 
 nav {
     flex-grow: 1;
-    padding: 0 25px;
+    padding: 0 20px;
 }
 
 .nav-item {
-    padding: 18px 25px;
-    border-radius: 22px;
-    margin-bottom: 12px;
+    padding: 14px 20px;
+    border-radius: 18px;
+    margin-bottom: 8px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 18px;
+    gap: 14px;
     color: var(--text-muted);
     transition: var(--transition-smooth);
     font-weight: 600;
-    font-size: 1.05rem;
+    font-size: 0.95rem; /* Slightly smaller nav items */
 }
 
 .nav-item span {

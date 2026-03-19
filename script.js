@@ -163,7 +163,7 @@ function showDashboard(user) {
             <span>🚪</span> ออกจากระบบ
         </div>
         <div class="sidebar-header">
-            <h2>WMS BU</h2>
+            <h2 class="scrolling-text">Warehouse Management System</h2>
             <p>Bangkok University</p>
         </div>
         <nav>
