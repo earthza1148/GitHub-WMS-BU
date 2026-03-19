@@ -845,23 +845,23 @@ async function openTransactionModal(item, mode) {
                     <div class="form-group"><label>Transaction Code</label><input type="text" id="tr_code" value="${item ? (item.code || '') : autoCode}" disabled required></div>
                     <div class="form-group">
                         <label>Movement Type</label>
-                        <select id="tr_type" ${!isEditMode ? 'disabled' : ''}>
+                        <select id="tr_type" ${(!isEditMode || mode === 'transfer') ? 'disabled' : ''}>
                             <option value="ยืม" ${item && item.movement_type === 'ยืม' ? 'selected' : ''}>ยืม</option>
                             <option value="จัดสรร" ${item && item.movement_type === 'จัดสรร' ? 'selected' : ''}>จัดสรร</option>
                             <option value="ตัดจำหน่าย" ${item && item.movement_type === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
-                            <option value="ย้ายของ" ${item && item.movement_type === 'ย้ายของ' ? 'selected' : ''}>ย้ายของ</option>
+                            <option value="ย้ายของ" ${(mode === 'transfer' || (item && item.movement_type === 'ย้ายของ')) ? 'selected' : ''}>ย้ายของ</option>
                         </select>
                     </div>
                     <div class="form-group"><label>From Zone</label><input type="text" id="tr_from_zone" value="${item ? (item.from_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>To Location (โซนใหม่)</label><input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group">
                         <label>Status</label>
-                        <select id="tr_status" ${!isEditMode ? 'disabled' : ''}>
+                        <select id="tr_status" ${(!isEditMode || mode === 'transfer') ? 'disabled' : ''}>
                             <option value="กำลังยืม" ${item && item.status === 'กำลังยืม' ? 'selected' : ''}>กำลังยืม</option>
                             <option value="คืนของแล้ว" ${item && item.status === 'คืนของแล้ว' ? 'selected' : ''}>คืนของแล้ว</option>
                             <option value="จัดสรรอยู่" ${item && item.status === 'จัดสรรอยู่' ? 'selected' : ''}>จัดสรรอยู่</option>
                             <option value="ตัดจำหน่าย" ${item && item.status === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
-                            <option value="ย้ายของ" ${item && item.status === 'ย้ายของ' ? 'selected' : ''}>ย้ายของ</option>
+                            <option value="ย้ายของ" ${(mode === 'transfer' || (item && item.status === 'ย้ายของ')) ? 'selected' : ''}>ย้ายของ</option>
                         </select>
                     </div>
                     ${mode === 'add' || mode === 'transfer' ? `<div class="form-group"><label>Quantity (จำนวนรายการ)</label><input type="number" id="tr_qty" value="1" min="1" oninput="handleQuantityChange(this.value)"></div>` : ''}
@@ -874,6 +874,12 @@ async function openTransactionModal(item, mode) {
                     ` : ''}
                     
                     <div class="form-group full-width"><label>Remark</label><textarea id="tr_remark" rows="2" ${!isEditMode ? 'disabled' : ''}>${item ? (item.remark || '') : ''}</textarea></div>
+                    ${currentUser.rank === 'Master' ? `
+                    <div class="form-group"><label>Created By (ID)</label><input type="text" value="${item ? (item.create_id || '') : currentUser.id}" disabled></div>
+                    <div class="form-group"><label>Created At</label><input type="text" value="${item ? (item.created_at || '') : new Date().toLocaleString('th-TH')}" disabled></div>
+                    <div class="form-group"><label>Last Edited By (ID)</label><input type="text" value="${mode === 'edit' ? currentUser.id : (item ? (item.edit_id || '') : '')}" disabled></div>
+                    <div class="form-group"><label>Last Edited At</label><input type="text" value="${mode === 'edit' ? new Date().toLocaleString('th-TH') : (item ? (item.edit_at || '') : '')}" disabled></div>
+                    ` : ''}
                 </div>
                 <div id="itemSelectionArea">
                     <h4 style="margin-bottom: 15px; color: #2d3436;">📦 รายการสิ่งของใน Transaction นี้</h4>
@@ -897,7 +903,15 @@ async function openTransactionModal(item, mode) {
             </form>
         </div>
     `;
-    if (mode === 'add' || mode === 'transfer') handleQuantityChange(1);
+    if (mode === 'add' || mode === 'transfer') {
+        handleQuantityChange(1);
+        if (mode === 'transfer') {
+            const trType = document.getElementById('tr_type');
+            const trStatus = document.getElementById('tr_status');
+            if (trType) trType.value = 'ย้ายของ';
+            if (trStatus) trStatus.value = 'ย้ายของ';
+        }
+    }
 }
 
 // Helper to update Item Master Status/Zone
@@ -911,16 +925,24 @@ async function updateItemMasterStatus(assetCode, inventoryCode, isActive, newZon
 }
 
 // Helper to update Inventory Master Quantity (With Auto-Create by Zone & Description)
-async function updateInventoryStock(zone, description, change, categoryId = null) {
+async function updateInventoryStock(zone, description, change, categoryId = null, imageUrl = null, forceDeleteIfZero = false) {
     if (!zone || !description) return;
     try {
         const { data, error } = await _supabase.from('Inventory Master').select('*').eq('zone', zone).eq('descriprion', description).single();
         if (error && error.code === 'PGRST116') {
-            const newInventory = { zone: zone, descriprion: description, quantity: change > 0 ? change : 0, active: true, id_category: categoryId, create_id: currentUser.id, created_at: new Date().toLocaleString('th-TH') };
-            await _supabase.from('Inventory Master').insert([newInventory]);
+            if (change > 0) {
+                const newInventory = { zone: zone, descriprion: description, quantity: change, active: true, id_category: categoryId, image: imageUrl, create_id: currentUser.id, created_at: new Date().toLocaleString('th-TH') };
+                await _supabase.from('Inventory Master').insert([newInventory]);
+            }
         } else if (data) {
             const newQty = (data.quantity || 0) + change;
-            await _supabase.from('Inventory Master').update({ quantity: newQty }).eq('id', data.id);
+            if (forceDeleteIfZero && newQty <= 0) {
+                await _supabase.from('Inventory Master').delete().eq('id', data.id);
+            } else {
+                const updateData = { quantity: Math.max(0, newQty) };
+                if (imageUrl && !data.image) updateData.image = imageUrl;
+                await _supabase.from('Inventory Master').update(updateData).eq('id', data.id);
+            }
         }
     } catch (err) { console.error("Failed to update Inventory stock:", err); }
 }
@@ -931,7 +953,7 @@ async function saveTransactionRecord(mode) {
     const fromZone = document.getElementById('tr_from_zone').value;
     const toLocation = document.getElementById('tr_location').value;
     const status = document.getElementById('tr_status').value;
-    const movementType = document.getElementById('tr_type').value;
+    const movementType = (mode === 'transfer') ? 'ย้ายของ' : document.getElementById('tr_type').value;
     const commonData = { code: code, movement_type: movementType, from_zone: fromZone, to_location: toLocation, status: status, name_lender: document.getElementById('tr_lender')?.value || null, name_borrower: document.getElementById('tr_borrower')?.value || null, lending_date: document.getElementById('tr_lending_date')?.value || null, date_returned: document.getElementById('tr_return_date')?.value || null, remark: document.getElementById('tr_remark').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
 
     try {
@@ -944,9 +966,13 @@ async function saveTransactionRecord(mode) {
 
             for (const row of rowsToInsert) {
                 if (mode === 'transfer' || movementType === 'ย้ายของ') {
+                    // Fetch source inventory image to carry over
+                    const { data: invData } = await _supabase.from('Inventory Master').select('image').eq('zone', fromZone).eq('descriprion', row.description).single();
+                    const sourceImage = invData ? invData.image : null;
+
                     await updateItemMasterStatus(row.asset_code, row.inventory_code, true, toLocation);
-                    await updateInventoryStock(fromZone, row.description, -1, row.id_category);
-                    await updateInventoryStock(toLocation, row.description, 1, row.id_category);
+                    await updateInventoryStock(fromZone, row.description, -1, row.id_category, null, true);
+                    await updateInventoryStock(toLocation, row.description, 1, row.id_category, sourceImage);
                 } else {
                     await updateItemMasterStatus(row.asset_code, row.inventory_code, false);
                     await updateInventoryStock(fromZone, row.description, -1, row.id_category);
