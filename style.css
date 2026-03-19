@@ -884,12 +884,115 @@ tbody tr {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* --- Responsive --- */
-@media (max-width: 1024px) {
-    .dashboard-container { padding: 120px 25px 30px; }
-    .controls-row { flex-direction: column; align-items: stretch; }
-    .search-input { width: 100% !important; }
+/* --- Modern Dashboard Stats --- */
+.modern-card {
+    padding: 25px;
+    border-radius: 30px;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 160px;
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition-smooth);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
 }
+
+.modern-card:hover {
+    transform: translateY(-10px) scale(1.02);
+    box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+}
+
+.modern-card::before {
+    content: '';
+    position: absolute;
+    top: -20px;
+    right: -20px;
+    width: 100px;
+    height: 100px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+}
+
+.card-icon {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    filter: drop-shadow(0 5px 10px rgba(0,0,0,0.1));
+}
+
+.card-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    opacity: 0.85;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.card-value {
+    font-size: 2rem;
+    font-weight: 800;
+}
+
+.card-value .unit {
+    font-size: 0.9rem;
+    font-weight: 400;
+    opacity: 0.8;
+}
+
+.card-progress {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    margin-top: 15px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    height: 100%;
+    background: #fff;
+    border-radius: 10px;
+    transition: width 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.analytics-card {
+    transition: var(--transition-smooth);
+}
+
+.analytics-card:hover {
+    box-shadow: 0 25px 60px rgba(58, 46, 91, 0.08);
+}
+
+.zone-rank-item {
+    padding: 10px;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+}
+
+.zone-rank-item:hover {
+    background: #f8faff;
+    transform: scale(1.01);
+}
+
+/* --- Scrollbar for analytics --- */
+.analytics-card::-webkit-scrollbar {
+    width: 6px;
+}
+.analytics-card::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 10px;
+}
+
+/* --- Responsive --- */
+@media (max-width: 1200px) {
+    div[style*="grid-template-columns: 1.5fr 1fr"] {
+        grid-template-columns: 1fr !important;
+    }
+}
+
 
 @media (max-width: 768px) {
     .modal-grid { grid-template-columns: 1fr; }

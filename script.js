@@ -1249,41 +1249,89 @@ async function renderDashboardView() {
     const mainContent = document.getElementById('mainContent');
     const cfg = layoutConfigs[currentLayout];
     
-    // คำนวณ Stats ภาพรวม
+    // Fetch data including new stats
     await fetchDashboardData();
     
-    const totalZones = Object.keys(dashboardData).length;
-    let totalQty = 0;
-    let uniqueDescs = new Set();
-    
-    Object.values(dashboardData).forEach(z => {
-        totalQty += z.totalQty;
-        Object.keys(z.descriptions).forEach(d => uniqueDescs.add(d));
-    });
+    const stats = dashboardStats;
 
     mainContent.innerHTML = `
-        <div class="dashboard-stats-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 25px;">
-            <div class="stat-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(108, 92, 231, 0.2);">
-                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">โซนทั้งหมด</span>
-                <div style="font-size: 1.8rem; font-weight: 800;">${totalZones.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Zones</span></div>
+        <!-- Main Stats Row -->
+        <div class="dashboard-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 35px;">
+            <div class="stat-card modern-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);">
+                <div class="card-icon">📦</div>
+                <div class="card-info">
+                    <span class="card-label">จำนวนของทั้งหมด</span>
+                    <div class="card-value">${stats.totalQty.toLocaleString()} <span class="unit">Units</span></div>
+                </div>
+                <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
             </div>
-            <div class="stat-card" style="background: linear-gradient(135deg, #ff7675 0%, #fab1a0 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(255, 118, 117, 0.2);">
-                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">จำนวนของทั้งหมด</span>
-                <div style="font-size: 1.8rem; font-weight: 800;">${totalQty.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Units</span></div>
+
+            <div class="stat-card modern-card" style="background: linear-gradient(135deg, #0984e3 0%, #74b9ff 100%);">
+                <div class="card-icon">📁</div>
+                <div class="card-info">
+                    <span class="card-label">หมวดหมู่ทั้งหมด</span>
+                    <div class="card-value">${stats.totalCategories.toLocaleString()} <span class="unit">Categories</span></div>
+                </div>
+                <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
             </div>
-            <div class="stat-card" style="background: linear-gradient(135deg, #00b894 0%, #55efc4 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(0, 184, 148, 0.2);">
-                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">รายการสิ่งของที่แตกต่าง</span>
-                <div style="font-size: 1.8rem; font-weight: 800;">${uniqueDescs.size.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Items</span></div>
+
+            <div class="stat-card modern-card" style="background: linear-gradient(135deg, #d4af37 0%, #f1c40f 100%);">
+                <div class="card-icon">📍</div>
+                <div class="card-info">
+                    <span class="card-label">โซนทั้งหมด</span>
+                    <div class="card-value">${stats.totalZones.toLocaleString()} <span class="unit">Zones</span></div>
+                </div>
+                <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
             </div>
         </div>
 
-        <div class="dashboard-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+        <!-- Visual Analytics Row -->
+        <div style="display: grid; grid-template-columns: 1.2fr 1.3fr; gap: 25px; margin-bottom: 35px;">
+            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 30px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); max-height: 450px; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
+                    <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.2rem;">📊 สรุปสถานะ Transaction Master</h3>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 12px;">
+                    ${Object.entries(stats.statusCounts).map(([status, count]) => {
+                        let color = '#3a7bd5';
+                        if (status.includes('ยืม')) color = '#e17055';
+                        if (status.includes('คืน')) color = '#00b894';
+                        if (status.includes('จัดสรร')) color = '#fdcb6e';
+                        
+                        return `
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f8faff; border-radius: 15px; border-left: 5px solid ${color};">
+                            <div>
+                                <span style="display: block; font-size: 0.8rem; color: ${color}; font-weight: 700;">${status}</span>
+                                <strong style="font-size: 1.1rem; color: var(--bu-purple);">${count.toLocaleString()} รายการ</strong>
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 30px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); max-height: 450px; overflow-y: auto;">
+                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.2rem; margin-bottom: 20px; position: sticky; top: 0; background: #fff; padding-bottom: 10px;">🏘️ สรุปจำนวนของแยกตามโซน</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px;">
+                    ${Object.entries(dashboardData)
+                        .sort((a, b) => b[1].totalQty - a[1].totalQty)
+                        .map(([zone, data]) => `
+                        <div class="zone-rank-item" style="display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; background: #f8faff; padding: 15px; border-radius: 20px; text-align: center; border: 1px solid #eee;" onclick="openZonePopup('${zone}')">
+                            <div style="font-weight: 800; color: var(--bu-purple); font-size: 1.2rem;">${zone}</div>
+                            <div style="font-weight: 700; color: var(--bu-orange); font-size: 1.4rem;">${data.totalQty.toLocaleString()}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        </div>
+
+        <div class="dashboard-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; padding: 20px; background: #fff; border-radius: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.03);">
             <div class="dashboard-layout-selector" style="margin-bottom:0">
                 ${Object.keys(layoutConfigs).map(key => `
                     <button class="layout-btn ${currentLayout === key ? 'active' : ''}" onclick="changeLayout('${key}')">${layoutConfigs[key].label}</button>
                 `).join('')}
             </div>
-            <div class="legend-card">
+            <div class="legend-card" style="border: none; box-shadow: none; background: #f8f9fa; padding: 10px 20px;">
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#d9d9d9; border-radius:3px;"></span> 0</div>
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#7fd3ff; border-radius:3px;"></span> 1-10</div>
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#97d055; border-radius:3px;"></span> 11-20</div>
@@ -1292,7 +1340,7 @@ async function renderDashboardView() {
             </div>
         </div>
 
-        <div class="layout-viewport">
+        <div class="layout-viewport" style="background: #fdfdfe; border-radius: 40px; border: 1px solid #eee;">
             <div id="layoutInteractive" class="layout-container" style="width: ${cfg.size.width}px; height: ${cfg.size.height}px;">
                 <!-- Rooms and Slots will be drawn here -->
             </div>
@@ -1356,23 +1404,31 @@ async function changeLayout(layoutKey) {
     renderDashboardView();
 }
 
+let dashboardStats = {};
+
 async function fetchDashboardData() {
     try {
         showLoading();
-        dashboardData = {}; // ล้างข้อมูลเก่าออกให้หมดก่อนดึงใหม่
+        dashboardData = {}; 
         
-        // Fetch data from both tables
-        const [invRes, itemRes] = await Promise.all([
+        // Fetch all data in parallel
+        const [invRes, itemRes, catRes, transRes] = await Promise.all([
             _supabase.from('Inventory Master').select('zone, descriprion, quantity, image'),
-            _supabase.from('Item Master').select('location_zone, description')
+            _supabase.from('Item Master').select('location_zone, description'),
+            _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
+            _supabase.from('Transection Inventory').select('status')
         ]);
 
         if (invRes.error) throw invRes.error;
         if (itemRes.error) throw itemRes.error;
+        if (catRes.error) throw catRes.error;
+        if (transRes.error) throw transRes.error;
 
         const zones = {};
+        let totalQty = 0;
+        let uniqueDescs = new Set();
 
-        // 1. ประมวลผล Inventory Master (เป็นแหล่งข้อมูลหลักของจำนวน Quantity)
+        // Process Inventory Master
         invRes.data.forEach(row => {
             const z = row.zone || 'Unknown';
             if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
@@ -1387,30 +1443,41 @@ async function fetchDashboardData() {
             
             zones[z].totalQty += qty;
             zones[z].descriptions[desc].qty += qty;
+            totalQty += qty;
+            uniqueDescs.add(desc);
+
             if (img && !zones[z].descriptions[desc].image) {
                 zones[z].descriptions[desc].image = img;
             }
         });
 
-        // 2. ประมวลผล Item Master (เพื่อดึงชื่อโซนหรือคำอธิบายที่อาจจะไม่มีใน Inventory Master มาแสดง)
-        // หมายเหตุ: ไม่บวกจำนวนเพิ่มที่นี่เพื่อป้องกันการนับซ้ำ (Double Counting)
-        // เพราะปกติระบบจะ Sync จำนวนจาก Item Master ไปที่ Inventory Master อยู่แล้ว
+        // Process Item Master
         itemRes.data.forEach(row => {
             const z = row.location_zone || 'Unknown';
             const desc = row.description || 'No Description';
-            
             if (!zones[z]) {
                 zones[z] = { totalQty: 0, descriptions: {} };
             }
-            
             if (!zones[z].descriptions[desc]) {
                 zones[z].descriptions[desc] = { qty: 0, image: null };
             }
-            
-            // ถ้าใน Inventory Master ไม่มีข้อมูลของ Item นี้เลย (ซึ่งไม่ควรเกิดขึ้นถ้า Sync ปกติ)
-            // เราอาจจะบวก 1 เป็นกรณีพิเศษ หรือปล่อยเป็น 0 ตามจริงใน Inventory
-            // ในที่นี้เลือกที่จะไม่บวกเพิ่มเพื่อให้เลขตรงกับหน้า Inventory Master
+            uniqueDescs.add(desc);
         });
+
+        // Global Stats
+        const statusCounts = {};
+        transRes.data.forEach(t => {
+            const status = t.status || 'N/A';
+            statusCounts[status] = (statusCounts[status] || 0) + 1;
+        });
+
+        dashboardStats = {
+            totalZones: Object.keys(zones).length,
+            totalQty: totalQty,
+            totalItems: uniqueDescs.size,
+            totalCategories: catRes.count || 0,
+            statusCounts: statusCounts
+        };
 
         dashboardData = zones;
     } catch (err) {
