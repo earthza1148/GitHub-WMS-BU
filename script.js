@@ -1286,41 +1286,28 @@ async function renderDashboardView() {
         </div>
 
         <!-- Visual Analytics Row -->
-        <div style="display: grid; grid-template-columns: 1.2fr 1.3fr; gap: 25px; margin-bottom: 35px;">
-            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 30px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); max-height: 450px; overflow-y: auto;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
-                    <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.2rem;">📊 สรุปสถานะ Transaction Master</h3>
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 12px;">
-                    ${Object.entries(stats.statusCounts).map(([status, count]) => {
-                        let color = '#3a7bd5';
-                        if (status.includes('ยืม')) color = '#e17055';
-                        if (status.includes('คืน')) color = '#00b894';
-                        if (status.includes('จัดสรร')) color = '#fdcb6e';
-                        
-                        return `
-                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 15px; background: #f8faff; border-radius: 15px; border-left: 5px solid ${color};">
-                            <div>
-                                <span style="display: block; font-size: 0.8rem; color: ${color}; font-weight: 700;">${status}</span>
-                                <strong style="font-size: 1.1rem; color: var(--bu-purple);">${count.toLocaleString()} รายการ</strong>
-                            </div>
-                        </div>
-                        `;
-                    }).join('')}
+        <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 25px; margin-bottom: 35px;">
+            <!-- Column 1: Transaction Status Chart -->
+            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); display: flex; flex-direction: column; align-items: center;">
+                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px; align-self: flex-start;">📊 Transaction Status</h3>
+                <div style="width: 100%; height: 280px; position: relative;">
+                    <canvas id="statusChart"></canvas>
                 </div>
             </div>
 
-            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 30px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); max-height: 450px; overflow-y: auto;">
-                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.2rem; margin-bottom: 20px; position: sticky; top: 0; background: #fff; padding-bottom: 10px;">🏘️ สรุปจำนวนของแยกตามโซน</h3>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 15px;">
-                    ${Object.entries(dashboardData)
-                        .sort((a, b) => b[1].totalQty - a[1].totalQty)
-                        .map(([zone, data]) => `
-                        <div class="zone-rank-item" style="display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; background: #f8faff; padding: 15px; border-radius: 20px; text-align: center; border: 1px solid #eee;" onclick="openZonePopup('${zone}')">
-                            <div style="font-weight: 800; color: var(--bu-purple); font-size: 1.2rem;">${zone}</div>
-                            <div style="font-weight: 700; color: var(--bu-orange); font-size: 1.4rem;">${data.totalQty.toLocaleString()}</div>
-                        </div>
-                    `).join('')}
+            <!-- Column 2: Grouped Zones Bar Chart -->
+            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border);">
+                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px;">🏘️ จำนวนของแยกตาม Zone</h3>
+                <div style="width: 100%; height: 280px;">
+                    <canvas id="zoneChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Column 3: Category Summary Chart -->
+            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); display: flex; flex-direction: column; align-items: center;">
+                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px; align-self: flex-start;">📁 Category Summary</h3>
+                <div style="width: 100%; height: 280px;">
+                    <canvas id="categoryChart"></canvas>
                 </div>
             </div>
         </div>
@@ -1348,6 +1335,90 @@ async function renderDashboardView() {
     `;
 
     drawInteractiveLayout();
+    initDashboardCharts(stats);
+}
+
+function initDashboardCharts(stats) {
+    const ctxStatus = document.getElementById('statusChart').getContext('2d');
+    const ctxZone = document.getElementById('zoneChart').getContext('2d');
+    const ctxCategory = document.getElementById('categoryChart').getContext('2d');
+
+    // 1. Transaction Status Chart (Doughnut)
+    new Chart(ctxStatus, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(stats.statusCounts),
+            datasets: [{
+                data: Object.values(stats.statusCounts),
+                backgroundColor: ['#e17055', '#00b894', '#fdcb6e', '#3a7bd5', '#a29bfe'],
+                borderWidth: 0,
+                hoverOffset: 15
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Kanit', size: 11 } } },
+                tooltip: { padding: 15, bodyFont: { family: 'Kanit' }, titleFont: { family: 'Kanit' } }
+            },
+            cutout: '70%'
+        }
+    });
+
+    // 2. Zone Group Chart (Horizontal Bar)
+    const zoneLabels = Object.keys(stats.prefixZones).sort((a,b) => stats.prefixZones[b] - stats.prefixZones[a]);
+    const zoneData = zoneLabels.map(l => stats.prefixZones[l]);
+
+    new Chart(ctxZone, {
+        type: 'bar',
+        data: {
+            labels: zoneLabels,
+            datasets: [{
+                label: 'Quantity',
+                data: zoneData,
+                backgroundColor: zoneLabels.map((_, i) => i % 2 === 0 ? '#3A2E5B' : '#E67E22'),
+                borderRadius: 10,
+                barThickness: 20
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { family: 'Kanit' } } },
+                y: { grid: { display: false }, ticks: { font: { family: 'Kanit', weight: 'bold' } } }
+            }
+        }
+    });
+
+    // 3. Category Summary Chart (Bar)
+    const catLabels = Object.keys(stats.categoryStats).sort((a,b) => stats.categoryStats[b] - stats.categoryStats[a]).slice(0, 10);
+    const catData = catLabels.map(l => stats.categoryStats[l]);
+
+    new Chart(ctxCategory, {
+        type: 'bar',
+        data: {
+            labels: catLabels,
+            datasets: [{
+                label: 'Items',
+                data: catData,
+                backgroundColor: '#3a7bd5',
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { family: 'Kanit', size: 10 } } },
+                y: { grid: { color: '#f0f0f0' }, ticks: { font: { family: 'Kanit' } } }
+            }
+        }
+    });
 }
 
 function drawInteractiveLayout() {
@@ -1413,8 +1484,8 @@ async function fetchDashboardData() {
         
         // Fetch all data in parallel
         const [invRes, itemRes, catRes, transRes] = await Promise.all([
-            _supabase.from('Inventory Master').select('zone, descriprion, quantity, image'),
-            _supabase.from('Item Master').select('location_zone, description'),
+            _supabase.from('Inventory Master').select('zone, descriprion, quantity, image, id_category'),
+            _supabase.from('Item Master').select('location_zone, description, category_id'),
             _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
             _supabase.from('Transection Inventory').select('status')
         ]);
@@ -1425,43 +1496,40 @@ async function fetchDashboardData() {
         if (transRes.error) throw transRes.error;
 
         const zones = {};
+        const prefixZones = {}; // Grouped by prefix (AA, BB, etc.)
+        const categoryStats = {}; // Total items per Category (from Item Master)
         let totalQty = 0;
         let uniqueDescs = new Set();
 
-        // Process Inventory Master
+        // Process Item Master for Category Stats (1 record = 1 item)
+        itemRes.data.forEach(row => {
+            const catId = row.category_id || 'N/A';
+            categoryStats[catId] = (categoryStats[catId] || 0) + 1;
+            
+            const z = row.location_zone || 'Unknown';
+            const desc = row.description || 'No Description';
+            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
+            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: null };
+            uniqueDescs.add(desc);
+        });
+
+        // Process Inventory Master for Zone Totals
         invRes.data.forEach(row => {
             const z = row.zone || 'Unknown';
-            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
-            
-            const desc = row.descriprion || 'No Description';
+            const prefix = z.replace(/[0-9]/g, '').trim() || z;
             const qty = row.quantity || 0;
+            const desc = row.descriprion || 'No Description';
             const img = row.image || null;
-            
-            if (!zones[z].descriptions[desc]) {
-                zones[z].descriptions[desc] = { qty: 0, image: img };
-            }
+
+            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
+            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img };
             
             zones[z].totalQty += qty;
             zones[z].descriptions[desc].qty += qty;
+            if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
+
+            prefixZones[prefix] = (prefixZones[prefix] || 0) + qty;
             totalQty += qty;
-            uniqueDescs.add(desc);
-
-            if (img && !zones[z].descriptions[desc].image) {
-                zones[z].descriptions[desc].image = img;
-            }
-        });
-
-        // Process Item Master
-        itemRes.data.forEach(row => {
-            const z = row.location_zone || 'Unknown';
-            const desc = row.description || 'No Description';
-            if (!zones[z]) {
-                zones[z] = { totalQty: 0, descriptions: {} };
-            }
-            if (!zones[z].descriptions[desc]) {
-                zones[z].descriptions[desc] = { qty: 0, image: null };
-            }
-            uniqueDescs.add(desc);
         });
 
         // Global Stats
@@ -1476,7 +1544,9 @@ async function fetchDashboardData() {
             totalQty: totalQty,
             totalItems: uniqueDescs.size,
             totalCategories: catRes.count || 0,
-            statusCounts: statusCounts
+            statusCounts: statusCounts,
+            prefixZones: prefixZones,
+            categoryStats: categoryStats
         };
 
         dashboardData = zones;
