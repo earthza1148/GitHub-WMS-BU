@@ -172,6 +172,7 @@ function showDashboard(user) {
             <div class="nav-item ${currentView === 'items' ? 'active' : ''}" onclick="switchView('items')"><span>🛠️</span> Item Master</div>
             <div class="nav-item ${currentView === 'transactions' ? 'active' : ''}" onclick="switchView('transactions')"><span>🔄</span> Transaction Master</div>
             ${user.rank === 'Master' ? `<div class="nav-item ${currentView === 'users' ? 'active' : ''}" onclick="switchView('users')"><span>👥</span> User Master</div>` : ''}
+            <div class="nav-item ${currentView === 'dashboard' ? 'active' : ''}" onclick="switchView('dashboard')"><span>📊</span> Dashboard</div>
         </nav>
         <div class="sidebar-footer">
             <div class="sidebar-user-info">
@@ -199,6 +200,18 @@ function showDashboard(user) {
     <div id="categoryModal" class="modal-overlay"></div>
     <div id="itemModal" class="modal-overlay"></div>
     <div id="transactionModal" class="modal-overlay"></div>
+
+    <!-- Side Popup Dashboard -->
+    <div id="popupOverlay" class="popup-overlay" onclick="closeZonePopup()"></div>
+    <div id="sidePopup" class="side-popup">
+        <div class="side-popup-header">
+            <h3 id="popupZoneName">Zone Detail</h3>
+            <button class="close-popup-btn" onclick="closeZonePopup()">✕</button>
+        </div>
+        <div class="side-popup-content" id="popupContent">
+            <!-- Content dynamic -->
+        </div>
+    </div>
     `;
     initLoading();
     renderCurrentView();
@@ -217,7 +230,7 @@ function toggleSidebar() {
 function switchView(view) {
     currentView = view;
     // ปรับชื่อ Title
-    const titles = { 'inventory': '📦 Inventory Master', 'category': '📁 Category Master', 'items': '🛠️ Item Master', 'transactions': '🔄 Transaction Master', 'users': '👥 User Master' };
+    const titles = { 'dashboard': '📊 Dashboard', 'inventory': '📦 Inventory Master', 'category': '📁 Category Master', 'items': '🛠️ Item Master', 'transactions': '🔄 Transaction Master', 'users': '👥 User Master' };
     if (document.getElementById('viewTitle')) {
         document.getElementById('viewTitle').innerHTML = titles[view];
     }
@@ -237,7 +250,8 @@ function switchView(view) {
 }
 
 function renderCurrentView() {
-    if (currentView === 'inventory') renderInventoryView();
+    if (currentView === 'dashboard') renderDashboardView();
+    else if (currentView === 'inventory') renderInventoryView();
     else if (currentView === 'users') renderUserView();
     else if (currentView === 'category') renderCategoryView();
     else if (currentView === 'items') renderItemView();
@@ -1127,3 +1141,280 @@ async function deleteUserItem(id) {
 
 function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
 function logout() { localStorage.removeItem('wms_user'); location.reload(); }
+
+// --- Dashboard View Implementation ---
+let dashboardData = {};
+let currentLayout = 'Indoor Floor 1';
+
+const layoutConfigs = {
+    'Indoor Floor 1': {
+        file: 'layouts/Indoor Floor 1_0.png',
+        label: 'Indoor Floor 1',
+        size: { width: 1180, height: 760 },
+        rooms: [
+            { text: 'BB<br>Inventory Zone', left: 80, top: 12, width: 1090, height: 110 },
+            { text: 'Key Zone', left: 10, top: 290, width: 230, height: 420 }
+        ],
+        slots: {
+            AA01: { left: 120, top: 140, width: 75, height: 78 }, AA02: { left: 195, top: 140, width: 75, height: 78 },
+            AA03: { left: 270, top: 140, width: 75, height: 78 }, AA04: { left: 345, top: 140, width: 75, height: 78 },
+            AA05: { left: 420, top: 140, width: 75, height: 78 }, AA06: { left: 495, top: 140, width: 75, height: 78 },
+            AA07: { left: 570, top: 140, width: 75, height: 78 }, AA08: { left: 645, top: 140, width: 75, height: 78 },
+            AA09: { left: 720, top: 140, width: 75, height: 78 }, AA10: { left: 795, top: 140, width: 75, height: 78 },
+            AA11: { left: 870, top: 140, width: 75, height: 78 }, AA12: { left: 945, top: 140, width: 75, height: 78 },
+            AA13: { left: 1020, top: 140, width: 75, height: 78 }, AA14: { left: 1095, top: 140, width: 75, height: 78 },
+            AA22: { left: 255, top: 310, width: 88, height: 188 }, AA21: { left: 255, top: 498, width: 88, height: 188 },
+            AA16: { left: 725, top: 330, width: 225, height: 88 }, AA15: { left: 950, top: 330, width: 220, height: 88 },
+            AA18: { left: 725, top: 478, width: 225, height: 88 }, AA17: { left: 950, top: 478, width: 220, height: 88 },
+            AA20: { left: 725, top: 626, width: 225, height: 88 }, AA19: { left: 950, top: 626, width: 220, height: 88 }
+        }
+    },
+    'Outdoor Floor 1': {
+        file: 'layouts/Outdoor Floor 1_0.png',
+        label: 'Outdoor Floor 1',
+        size: { width: 1180, height: 760 },
+        rooms: [
+            { text: 'LIFT', left: 930, top: 6, width: 140, height: 86 },
+            { text: 'DD<br>Inventory Zone', left: 730, top: 14, width: 120, height: 92 },
+            { text: 'DD<br>Inventory Zone', left: 948, top: 320, width: 88, height: 360 },
+            { text: 'DD<br>Inventory Zone', left: 800, top: 720, width: 300, height: 44 },
+            { text: 'Garbage for sale', left: 300, top: 110, width: 54, height: 120, fontSize: 12 },
+            { text: 'Garbage<br>for sale', left: 412, top: 174, width: 64, height: 56, fontSize: 10 },
+            { text: '-4 / จัดชั้น 1', left: 8, top: 56, width: 58, height: 94, fontSize: 12, rotate: -90 },
+            { text: '-4 / จัดชั้น 1', left: 8, top: 150, width: 58, height: 94, fontSize: 12, rotate: -90 }
+        ],
+        slots: {
+            JJ01: { left: 64, top: 2, width: 140, height: 44 }, JJ02: { left: 204, top: 2, width: 140, height: 44 }, JJ03: { left: 344, top: 2, width: 140, height: 44 },
+            HH03: { left: 94, top: 110, width: 200, height: 136 }, HH02: { left: 94, top: 250, width: 200, height: 136 }, HH01: { left: 296, top: 250, width: 200, height: 136 },
+            KK: { left: 360, top: 110, width: 160, height: 136 },
+            II07: { left: 8, top: 56, width: 58, height: 94 }, II06: { left: 8, top: 150, width: 58, height: 94 }, II05: { left: 8, top: 244, width: 58, height: 94 },
+            II04: { left: 8, top: 338, width: 58, height: 94 }, II03: { left: 8, top: 432, width: 58, height: 94 }, II02: { left: 8, top: 526, width: 58, height: 94 }, II01: { left: 8, top: 620, width: 58, height: 94 },
+            GG10: { left: 92, top: 426, width: 104, height: 44 }, GG11: { left: 296, top: 426, width: 104, height: 44 }, GG12: { left: 400, top: 426, width: 100, height: 44 },
+            GG09: { left: 92, top: 530, width: 104, height: 42 }, GG08: { left: 196, top: 530, width: 104, height: 42 }, GG07: { left: 300, top: 530, width: 104, height: 42 }, GG06: { left: 404, top: 530, width: 104, height: 42 },
+            GG05: { left: 92, top: 630, width: 128, height: 48 }, GG04: { left: 258, top: 630, width: 128, height: 48 }, GG03: { left: 386, top: 630, width: 128, height: 48 },
+            GG02: { left: 198, top: 732, width: 122, height: 28 }, GG01: { left: 320, top: 732, width: 122, height: 28 },
+            FF01: { left: 678, top: 210, width: 258, height: 176 },
+            EE08: { left: 678, top: 410, width: 128, height: 48 }, EE09: { left: 806, top: 410, width: 130, height: 48 },
+            EE06: { left: 678, top: 520, width: 128, height: 48 }, EE07: { left: 806, top: 520, width: 130, height: 48 },
+            EE05: { left: 628, top: 610, width: 52, height: 90 }, EE04: { left: 680, top: 610, width: 126, height: 45 }, EE03: { left: 806, top: 610, width: 130, height: 45 },
+            EE01: { left: 680, top: 655, width: 126, height: 45 }, EE02: { left: 806, top: 655, width: 130, height: 45 }
+        }
+    },
+    'Outdoor Floor 2 Left': {
+        file: 'layouts/Outdoor floor 2 Left_0.png',
+        label: 'Outdoor Floor 2 Left',
+        size: { width: 1160, height: 930 },
+        rooms: [
+            { text: 'LIFT', left: 960, top: 6, width: 150, height: 72 },
+            { text: '', left: 960, top: 190, width: 190, height: 575, bg: '#dceaf0' }
+        ],
+        slots: {
+            NN02: { left: 6, top: 0, width: 280, height: 146 }, NN03: { left: 286, top: 0, width: 280, height: 146 },
+            NN01: { left: 6, top: 146, width: 560, height: 118 },
+            OO04: { left: 214, top: 318, width: 92, height: 56 }, OO03: { left: 306, top: 318, width: 92, height: 56 }, OO02: { left: 398, top: 318, width: 92, height: 56 }, OO01: { left: 490, top: 318, width: 92, height: 56 },
+            OO05: { left: 214, top: 374, width: 92, height: 42 }, OO06: { left: 306, top: 374, width: 92, height: 42 }, OO07: { left: 398, top: 374, width: 92, height: 42 }, OO08: { left: 490, top: 374, width: 92, height: 42 },
+            ZZ11: { left: 88, top: 450, width: 160, height: 44 }, ZZ09: { left: 262, top: 450, width: 160, height: 44 }, ZZ07: { left: 436, top: 450, width: 160, height: 44 },
+            ZZ10: { left: 88, top: 494, width: 160, height: 44 }, ZZ08: { left: 262, top: 494, width: 160, height: 44 }, ZZ06: { left: 436, top: 494, width: 160, height: 44 },
+            ZZ05: { left: 90, top: 590, width: 500, height: 48 }, ZZ04: { left: 90, top: 638, width: 500, height: 48 }, ZZ03: { left: 90, top: 720, width: 500, height: 46 }, ZZ02: { left: 90, top: 766, width: 500, height: 46 },
+            ZZ01: { left: 160, top: 878, width: 360, height: 46 },
+            MM01: { left: 660, top: 176, width: 266, height: 182 }, MM02: { left: 660, top: 358, width: 266, height: 182 }, MM03: { left: 660, top: 540, width: 266, height: 280 }
+        }
+    },
+    'Outdoor Floor 2 Right': {
+        file: 'layouts/Outdoor floor 2 Right_0.png',
+        label: 'Outdoor Floor 2 Right',
+        size: { width: 1060, height: 640 },
+        rooms: [
+            { text: 'LIFT', left: 12, top: 8, width: 184, height: 72 },
+            { text: '', left: 0, top: 176, width: 206, height: 590, bg: '#dceaf0' },
+            { text: 'ห้องเก็บพระ', left: 744, top: 392, width: 300, height: 240 }
+        ],
+        slots: {
+            ZZA: { left: 278, top: 0, width: 182, height: 78, label: 'ZZ-A' }, ZZB: { left: 462, top: 0, width: 182, height: 78, label: 'ZZ-B' }, ZZC: { left: 646, top: 0, width: 182, height: 78, label: 'ZZ-C' }, ZZD: { left: 830, top: 0, width: 182, height: 78, label: 'ZZ-D' },
+            LL01: { left: 222, top: 176, width: 338, height: 178 }, ZZDOC01: { left: 918, top: 92, width: 104, height: 250, label: 'ZZ-Doc. 01' },
+            LL02: { left: 222, top: 428, width: 338, height: 206 }
+        }
+    }
+};
+
+function getQtyColor(qty) {
+    if (qty === 0) return '#d9d9d9';
+    if (qty <= 10) return '#7fd3ff';
+    if (qty <= 20) return '#97d055';
+    if (qty <= 30) return '#fff200';
+    return '#e566e7';
+}
+
+async function renderDashboardView() {
+    const mainContent = document.getElementById('mainContent');
+    const cfg = layoutConfigs[currentLayout];
+    
+    mainContent.innerHTML = `
+        <div class="dashboard-controls">
+            <div class="dashboard-layout-selector" style="margin-bottom:0">
+                ${Object.keys(layoutConfigs).map(key => `
+                    <button class="layout-btn ${currentLayout === key ? 'active' : ''}" onclick="changeLayout('${key}')">${layoutConfigs[key].label}</button>
+                `).join('')}
+            </div>
+            <div class="legend-card">
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#d9d9d9; border-radius:3px;"></span> 0</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#7fd3ff; border-radius:3px;"></span> 1-10</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#97d055; border-radius:3px;"></span> 11-20</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#fff200; border-radius:3px;"></span> 21-30</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#e566e7; border-radius:3px;"></span> 31+</div>
+            </div>
+        </div>
+
+        <div class="layout-viewport">
+            <div id="layoutInteractive" class="layout-container" style="width: ${cfg.size.width}px; height: ${cfg.size.height}px;">
+                <!-- Rooms and Slots will be drawn here without background image -->
+            </div>
+        </div>
+    `;
+
+    await fetchDashboardData();
+    drawInteractiveLayout();
+}
+
+function drawInteractiveLayout() {
+    const container = document.getElementById('layoutInteractive');
+    const cfg = layoutConfigs[currentLayout];
+    if (!container || !cfg) return;
+
+    // Draw Rooms (Static areas)
+    cfg.rooms.forEach(room => {
+        const div = document.createElement('div');
+        div.className = 'room';
+        div.style.left = room.left + 'px';
+        div.style.top = room.top + 'px';
+        div.style.width = room.width + 'px';
+        div.style.height = room.height + 'px';
+        if (room.fontSize) div.style.fontSize = room.fontSize + 'px';
+        if (room.rotate) div.style.transform = `rotate(${room.rotate}deg)`;
+        div.innerHTML = room.text || '';
+        container.appendChild(div);
+    });
+
+    // Draw Slots (Interactive interactive)
+    Object.entries(cfg.slots).forEach(([code, pos]) => {
+        const zoneInfo = dashboardData[code] || { totalQty: 0 };
+        const div = document.createElement('div');
+        div.className = 'slot';
+        div.style.left = pos.left + 'px';
+        div.style.top = pos.top + 'px';
+        div.style.width = pos.width + 'px';
+        div.style.height = pos.height + 'px';
+        div.style.background = getQtyColor(zoneInfo.totalQty);
+        
+        div.innerHTML = `
+            <div class="code">${pos.label || code}</div>
+            <div class="qty">${zoneInfo.totalQty} pcs</div>
+        `;
+        
+        div.onclick = (e) => {
+            e.stopPropagation();
+            // Highlight selected slot
+            document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
+            div.classList.add('active');
+            openZonePopup(code);
+        };
+        
+        container.appendChild(div);
+    });
+}
+
+async function changeLayout(layoutKey) {
+    currentLayout = layoutKey;
+    renderDashboardView();
+}
+
+async function fetchDashboardData() {
+    try {
+        showLoading();
+        // Fetch data from both tables
+        const [invRes, itemRes] = await Promise.all([
+            _supabase.from('Inventory Master').select('zone, descriprion, quantity'),
+            _supabase.from('Item Master').select('location_zone, description')
+        ]);
+
+        if (invRes.error) throw invRes.error;
+        if (itemRes.error) throw itemRes.error;
+
+        const zones = {};
+
+        // Process Inventory Master (Quantity based)
+        invRes.data.forEach(row => {
+            const z = row.zone || 'Unknown';
+            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
+            
+            const desc = row.descriprion || 'No Description';
+            const qty = row.quantity || 0;
+            
+            zones[z].totalQty += qty;
+            zones[z].descriptions[desc] = (zones[z].descriptions[desc] || 0) + qty;
+        });
+
+        // Process Item Master (Record based)
+        itemRes.data.forEach(row => {
+            const z = row.location_zone || 'Unknown';
+            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
+            
+            const desc = row.description || 'No Description';
+            
+            // Each record in Item Master is typically 1 unit
+            zones[z].totalQty += 1;
+            zones[z].descriptions[desc] = (zones[z].descriptions[desc] || 0) + 1;
+        });
+
+        dashboardData = zones;
+    } catch (err) {
+        console.error('Error fetching dashboard data:', err);
+    } finally {
+        hideLoading();
+    }
+}
+
+function renderZoneList() {
+    // This function is replaced by drawInteractiveLayout
+}
+
+function openZonePopup(zoneName) {
+    const popup = document.getElementById('sidePopup');
+    const overlay = document.getElementById('popupOverlay');
+    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {} };
+
+    document.getElementById('popupZoneName').innerText = zoneName;
+    
+    const content = document.getElementById('popupContent');
+    content.innerHTML = `
+        <div class="popup-summary">
+            <span class="summary-label">Total Items in Zone</span>
+            <div class="summary-value">${zoneInfo.totalQty.toLocaleString()}</div>
+        </div>
+        <h4 style="margin-bottom: 20px; color: var(--bu-purple);">Item Descriptions</h4>
+        <div class="popup-item-list">
+            ${Object.keys(zoneInfo.descriptions).map(desc => `
+                <div class="popup-item-card">
+                    <span class="item-desc">${desc}</span>
+                    <div class="item-meta">
+                        <span>Quantity</span>
+                        <span class="item-qty">${zoneInfo.descriptions[desc].toLocaleString()}</span>
+                    </div>
+                </div>
+            `).join('')}
+            ${Object.keys(zoneInfo.descriptions).length === 0 ? `<p style="color: var(--text-muted);">No items found.</p>` : ''}
+        </div>
+    `;
+
+    popup.classList.add('open');
+    if (overlay) overlay.classList.add('show');
+}
+
+function closeZonePopup() {
+    const popup = document.getElementById('sidePopup');
+    const overlay = document.getElementById('popupOverlay');
+    if (popup) popup.classList.remove('open');
+    if (overlay) overlay.classList.remove('show');
+    // Also remove highlight from layout
+    document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
+}
