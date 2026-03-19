@@ -1238,11 +1238,11 @@ const layoutConfigs = {
 };
 
 function getQtyColor(qty) {
-    if (qty === 0) return '#d9d9d9';
-    if (qty <= 10) return '#7fd3ff';
-    if (qty <= 20) return '#97d055';
-    if (qty <= 30) return '#fff200';
-    return '#e566e7';
+    if (qty === 0) return '#d9d9d9'; // ว่าง
+    if (qty <= 10) return '#7fd3ff'; // ฟ้า
+    if (qty <= 20) return '#97d055'; // เขียว
+    if (qty <= 30) return '#fff200'; // เหลือง
+    return '#e566e7'; // ชมพู/ม่วง
 }
 
 async function renderDashboardView() {
@@ -1283,7 +1283,13 @@ async function renderDashboardView() {
                     <button class="layout-btn ${currentLayout === key ? 'active' : ''}" onclick="changeLayout('${key}')">${layoutConfigs[key].label}</button>
                 `).join('')}
             </div>
-            <button class="btn-save" style="background: var(--bu-purple); padding: 10px 20px;" onclick="renderDashboardView()"><span>🔄</span> Refresh Data</button>
+            <div class="legend-card">
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#d9d9d9; border-radius:3px;"></span> 0</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#7fd3ff; border-radius:3px;"></span> 1-10</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#97d055; border-radius:3px;"></span> 11-20</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#fff200; border-radius:3px;"></span> 21-30</div>
+                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#e566e7; border-radius:3px;"></span> 31+</div>
+            </div>
         </div>
 
         <div class="layout-viewport">
@@ -1331,12 +1337,11 @@ function drawInteractiveLayout() {
         
         div.innerHTML = `
             <div class="code">${pos.label || code}</div>
-            <div class="qty">${zoneInfo.totalQty} pcs</div>
+            <div class="qty">${zoneInfo.totalQty} units</div>
         `;
         
         div.onclick = (e) => {
             e.stopPropagation();
-            // Highlight selected slot
             document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
             div.classList.add('active');
             openZonePopup(code);
@@ -1367,7 +1372,7 @@ async function fetchDashboardData() {
 
         const zones = {};
 
-        // Process Inventory Master (ใช้จำนวน Quantity และดึงรูปภาพมาด้วย)
+        // 1. ประมวลผล Inventory Master (เป็นแหล่งข้อมูลหลักของจำนวน Quantity)
         invRes.data.forEach(row => {
             const z = row.zone || 'Unknown';
             if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
@@ -1382,25 +1387,29 @@ async function fetchDashboardData() {
             
             zones[z].totalQty += qty;
             zones[z].descriptions[desc].qty += qty;
-            // ถ้ามีรูปในแถวใดแถวหนึ่ง ให้ใช้รูปนั้น
             if (img && !zones[z].descriptions[desc].image) {
                 zones[z].descriptions[desc].image = img;
             }
         });
 
-        // Process Item Master (นับเป็นรายการละ 1 หน่วย)
+        // 2. ประมวลผล Item Master (เพื่อดึงชื่อโซนหรือคำอธิบายที่อาจจะไม่มีใน Inventory Master มาแสดง)
+        // หมายเหตุ: ไม่บวกจำนวนเพิ่มที่นี่เพื่อป้องกันการนับซ้ำ (Double Counting)
+        // เพราะปกติระบบจะ Sync จำนวนจาก Item Master ไปที่ Inventory Master อยู่แล้ว
         itemRes.data.forEach(row => {
             const z = row.location_zone || 'Unknown';
-            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
-            
             const desc = row.description || 'No Description';
+            
+            if (!zones[z]) {
+                zones[z] = { totalQty: 0, descriptions: {} };
+            }
             
             if (!zones[z].descriptions[desc]) {
                 zones[z].descriptions[desc] = { qty: 0, image: null };
             }
             
-            zones[z].totalQty += 1;
-            zones[z].descriptions[desc].qty += 1;
+            // ถ้าใน Inventory Master ไม่มีข้อมูลของ Item นี้เลย (ซึ่งไม่ควรเกิดขึ้นถ้า Sync ปกติ)
+            // เราอาจจะบวก 1 เป็นกรณีพิเศษ หรือปล่อยเป็น 0 ตามจริงใน Inventory
+            // ในที่นี้เลือกที่จะไม่บวกเพิ่มเพื่อให้เลขตรงกับหน้า Inventory Master
         });
 
         dashboardData = zones;
