@@ -529,8 +529,22 @@ async function saveItemRecord(mode) {
 async function deleteItemRecord(assetCode) {
     if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบไอเทม Asset Code: ${assetCode}?`)) return;
     showLoading();
-    try { const { error } = await _supabase.from('Item Master').delete().eq('asset_code', assetCode); if (error) throw error; alert('ลบไอเทมสำเร็จ!'); loadItemData(); }
-    catch (err) { alert('ลบไอเทมไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    try {
+        // Fetch item details before deletion to update inventory
+        const { data: item, error: fetchError } = await _supabase.from('Item Master').select('location_zone, description, category_id').eq('asset_code', assetCode).single();
+        if (fetchError) throw fetchError;
+
+        const { error } = await _supabase.from('Item Master').delete().eq('asset_code', assetCode);
+        if (error) throw error;
+
+        // Sync with Inventory Master (subtract 1)
+        if (item && item.location_zone && item.description) {
+            await updateInventoryStock(item.location_zone, item.description, -1, item.category_id);
+        }
+
+        alert('ลบไอเทมสำเร็จ!');
+        loadItemData();
+    } catch (err) { alert('ลบไอเทมไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
 }
 
 // --- Category Master View ---
