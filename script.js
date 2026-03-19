@@ -883,7 +883,7 @@ async function openTransactionModal(item, mode) {
                     ${mode !== 'transfer' && (!item || item.movement_type !== 'ย้ายของ') ? `
                     <div class="form-group"><label>Name Lender (ผู้ให้)</label><input type="text" id="tr_lender" value="${item ? (item.name_lender || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Name Borrower (ผู้รับ)</label><input type="text" id="tr_borrower" value="${item ? (item.name_borrower || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
-                    <div class="form-group"><label>Lending Date</label><input type="datetime-local" id="tr_lending_date" value="${item && item.lending_date ? item.lending_date.slice(0,16) : ''}" ${!isEditMode ? 'disabled' : ''}></div>
+                    <div class="form-group"><label>Lending Date</label><input type="datetime-local" id="tr_lender_date" value="${item && item.lending_date ? item.lending_date.slice(0,16) : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Date Returned</label><input type="datetime-local" id="tr_return_date" value="${item && item.date_returned ? item.date_returned.slice(0,16) : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     ` : ''}
                     
@@ -968,7 +968,7 @@ async function saveTransactionRecord(mode) {
     const toLocation = document.getElementById('tr_location').value;
     const status = document.getElementById('tr_status').value;
     const movementType = (mode === 'transfer') ? 'ย้ายของ' : document.getElementById('tr_type').value;
-    const commonData = { code: code, movement_type: movementType, from_zone: fromZone, to_location: toLocation, status: status, name_lender: document.getElementById('tr_lender')?.value || null, name_borrower: document.getElementById('tr_borrower')?.value || null, lending_date: document.getElementById('tr_lending_date')?.value || null, date_returned: document.getElementById('tr_return_date')?.value || null, remark: document.getElementById('tr_remark').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
+    const commonData = { code: code, movement_type: movementType, from_zone: fromZone, to_location: toLocation, status: status, name_lender: document.getElementById('tr_lender')?.value || null, name_borrower: document.getElementById('tr_borrower')?.value || null, lending_date: document.getElementById('tr_lender_date')?.value || null, date_returned: document.getElementById('tr_return_date')?.value || null, remark: document.getElementById('tr_remark').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
 
     try {
         if (mode === 'add' || mode === 'transfer') {
@@ -1249,30 +1249,50 @@ async function renderDashboardView() {
     const mainContent = document.getElementById('mainContent');
     const cfg = layoutConfigs[currentLayout];
     
+    // คำนวณ Stats ภาพรวม
+    await fetchDashboardData();
+    
+    const totalZones = Object.keys(dashboardData).length;
+    let totalQty = 0;
+    let uniqueDescs = new Set();
+    
+    Object.values(dashboardData).forEach(z => {
+        totalQty += z.totalQty;
+        Object.keys(z.descriptions).forEach(d => uniqueDescs.add(d));
+    });
+
     mainContent.innerHTML = `
-        <div class="dashboard-controls">
+        <div class="dashboard-stats-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 25px;">
+            <div class="stat-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(108, 92, 231, 0.2);">
+                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">โซนทั้งหมด</span>
+                <div style="font-size: 1.8rem; font-weight: 800;">${totalZones.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Zones</span></div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #ff7675 0%, #fab1a0 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(255, 118, 117, 0.2);">
+                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">จำนวนของทั้งหมด</span>
+                <div style="font-size: 1.8rem; font-weight: 800;">${totalQty.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Units</span></div>
+            </div>
+            <div class="stat-card" style="background: linear-gradient(135deg, #00b894 0%, #55efc4 100%); padding: 20px; border-radius: 20px; color: #fff; box-shadow: 0 10px 20px rgba(0, 184, 148, 0.2);">
+                <span style="font-size: 0.85rem; opacity: 0.8; text-transform: uppercase; letter-spacing: 1px;">รายการสิ่งของที่แตกต่าง</span>
+                <div style="font-size: 1.8rem; font-weight: 800;">${uniqueDescs.size.toLocaleString()} <span style="font-size: 1rem; font-weight: 400;">Items</span></div>
+            </div>
+        </div>
+
+        <div class="dashboard-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px;">
             <div class="dashboard-layout-selector" style="margin-bottom:0">
                 ${Object.keys(layoutConfigs).map(key => `
                     <button class="layout-btn ${currentLayout === key ? 'active' : ''}" onclick="changeLayout('${key}')">${layoutConfigs[key].label}</button>
                 `).join('')}
             </div>
-            <div class="legend-card">
-                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#d9d9d9; border-radius:3px;"></span> 0</div>
-                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#7fd3ff; border-radius:3px;"></span> 1-10</div>
-                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#97d055; border-radius:3px;"></span> 11-20</div>
-                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#fff200; border-radius:3px;"></span> 21-30</div>
-                <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#e566e7; border-radius:3px;"></span> 31+</div>
-            </div>
+            <button class="btn-save" style="background: var(--bu-purple); padding: 10px 20px;" onclick="renderDashboardView()"><span>🔄</span> Refresh Data</button>
         </div>
 
         <div class="layout-viewport">
             <div id="layoutInteractive" class="layout-container" style="width: ${cfg.size.width}px; height: ${cfg.size.height}px;">
-                <!-- Rooms and Slots will be drawn here without background image -->
+                <!-- Rooms and Slots will be drawn here -->
             </div>
         </div>
     `;
 
-    await fetchDashboardData();
     drawInteractiveLayout();
 }
 
@@ -1306,6 +1326,9 @@ function drawInteractiveLayout() {
         div.style.height = pos.height + 'px';
         div.style.background = getQtyColor(zoneInfo.totalQty);
         
+        // Add Tooltip data
+        div.setAttribute('data-tooltip', `${code}: ${zoneInfo.totalQty.toLocaleString()} units`);
+        
         div.innerHTML = `
             <div class="code">${pos.label || code}</div>
             <div class="qty">${zoneInfo.totalQty} pcs</div>
@@ -1331,9 +1354,11 @@ async function changeLayout(layoutKey) {
 async function fetchDashboardData() {
     try {
         showLoading();
+        dashboardData = {}; // ล้างข้อมูลเก่าออกให้หมดก่อนดึงใหม่
+        
         // Fetch data from both tables
         const [invRes, itemRes] = await Promise.all([
-            _supabase.from('Inventory Master').select('zone, descriprion, quantity'),
+            _supabase.from('Inventory Master').select('zone, descriprion, quantity, image'),
             _supabase.from('Item Master').select('location_zone, description')
         ]);
 
@@ -1342,28 +1367,40 @@ async function fetchDashboardData() {
 
         const zones = {};
 
-        // Process Inventory Master (Quantity based)
+        // Process Inventory Master (ใช้จำนวน Quantity และดึงรูปภาพมาด้วย)
         invRes.data.forEach(row => {
             const z = row.zone || 'Unknown';
             if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
             
             const desc = row.descriprion || 'No Description';
             const qty = row.quantity || 0;
+            const img = row.image || null;
+            
+            if (!zones[z].descriptions[desc]) {
+                zones[z].descriptions[desc] = { qty: 0, image: img };
+            }
             
             zones[z].totalQty += qty;
-            zones[z].descriptions[desc] = (zones[z].descriptions[desc] || 0) + qty;
+            zones[z].descriptions[desc].qty += qty;
+            // ถ้ามีรูปในแถวใดแถวหนึ่ง ให้ใช้รูปนั้น
+            if (img && !zones[z].descriptions[desc].image) {
+                zones[z].descriptions[desc].image = img;
+            }
         });
 
-        // Process Item Master (Record based)
+        // Process Item Master (นับเป็นรายการละ 1 หน่วย)
         itemRes.data.forEach(row => {
             const z = row.location_zone || 'Unknown';
             if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
             
             const desc = row.description || 'No Description';
             
-            // Each record in Item Master is typically 1 unit
+            if (!zones[z].descriptions[desc]) {
+                zones[z].descriptions[desc] = { qty: 0, image: null };
+            }
+            
             zones[z].totalQty += 1;
-            zones[z].descriptions[desc] = (zones[z].descriptions[desc] || 0) + 1;
+            zones[z].descriptions[desc].qty += 1;
         });
 
         dashboardData = zones;
@@ -1372,10 +1409,6 @@ async function fetchDashboardData() {
     } finally {
         hideLoading();
     }
-}
-
-function renderZoneList() {
-    // This function is replaced by drawInteractiveLayout
 }
 
 function openZonePopup(zoneName) {
@@ -1391,23 +1424,135 @@ function openZonePopup(zoneName) {
             <span class="summary-label">Total Items in Zone</span>
             <div class="summary-value">${zoneInfo.totalQty.toLocaleString()}</div>
         </div>
-        <h4 style="margin-bottom: 20px; color: var(--bu-purple);">Item Descriptions</h4>
-        <div class="popup-item-list">
-            ${Object.keys(zoneInfo.descriptions).map(desc => `
-                <div class="popup-item-card">
-                    <span class="item-desc">${desc}</span>
-                    <div class="item-meta">
-                        <span>Quantity</span>
-                        <span class="item-qty">${zoneInfo.descriptions[desc].toLocaleString()}</span>
-                    </div>
-                </div>
-            `).join('')}
-            ${Object.keys(zoneInfo.descriptions).length === 0 ? `<p style="color: var(--text-muted);">No items found.</p>` : ''}
+        
+        <div class="search-group" style="margin-bottom: 25px;">
+            <input type="text" id="popupSearch" class="search-input" style="width:100%; padding: 0.8rem 1.2rem; border-radius: 15px;" 
+                   placeholder="🔍 ค้นหา Description..." oninput="filterPopupItems('${zoneName}')">
+        </div>
+
+        <h4 style="margin-bottom: 20px; color: var(--bu-purple); display: flex; justify-content: space-between; align-items: center;">
+            รายการสิ่งของ
+            <span style="font-size: 0.8rem; background: #f0f3ff; color: #3a7bd5; padding: 4px 10px; border-radius: 8px;" id="popupMatchCount">
+                ${Object.keys(zoneInfo.descriptions).length} รายการ
+            </span>
+        </h4>
+        
+        <div class="popup-item-list" id="popupItemList">
+            ${renderPopupItemList(zoneName)}
         </div>
     `;
 
     popup.classList.add('open');
     if (overlay) overlay.classList.add('show');
+}
+
+function renderPopupItemList(zoneName, filter = '') {
+    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {} };
+    const descriptions = Object.keys(zoneInfo.descriptions).filter(desc => 
+        desc.toLowerCase().includes(filter.toLowerCase())
+    );
+
+    if (descriptions.length === 0) {
+        return `<p style="color: var(--text-muted); text-align: center; padding: 20px;">ไม่พบรายการที่ตรงกับเงื่อนไข</p>`;
+    }
+
+    return descriptions.map(desc => {
+        const item = zoneInfo.descriptions[desc];
+        return `
+            <div class="popup-item-card" style="display: flex; gap: 15px; align-items: center; cursor: pointer; transition: transform 0.2s;" 
+                 onclick="showItemDetailsInZone('${zoneName}', '${desc.replace(/'/g, "\\'")}')"
+                 onmouseover="this.style.transform='translateX(5px)'" 
+                 onmouseout="this.style.transform='translateX(0)'">
+                ${item.image ? `<img src="${item.image}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 10px; border: 1px solid #eee;">` : `<div style="width: 60px; height: 60px; background: #f8f9fa; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #ccc; border: 1px solid #eee;">🖼️</div>`}
+                <div style="flex: 1;">
+                    <span class="item-desc" style="margin-bottom: 5px; display: block; font-weight: 700; color: var(--bu-purple);">${desc}</span>
+                    <div class="item-meta">
+                        <span>ยอดรวมใน Zone</span>
+                        <span class="item-qty" style="font-weight: 800; color: var(--bu-orange);">${item.qty.toLocaleString()}</span>
+                    </div>
+                </div>
+                <div style="color: #ccc; font-size: 1.2rem;">›</div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function showItemDetailsInZone(zoneName, description) {
+    showLoading();
+    try {
+        // ดึงข้อมูลดิบจากทั้ง 2 ตารางที่ระบุ Zone และ Description นี้
+        const [invRes, itemRes] = await Promise.all([
+            _supabase.from('Inventory Master').select('*').eq('zone', zoneName).eq('descriprion', description),
+            _supabase.from('Item Master').select('*').eq('location_zone', zoneName).eq('description', description)
+        ]);
+
+        const popupContent = document.getElementById('popupContent');
+        const backBtn = `<button onclick="openZonePopup('${zoneName}')" style="background: none; border: none; color: var(--bu-purple); cursor: pointer; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 5px;">← กลับไปหน้ารวม Zone</button>`;
+        
+        let html = `${backBtn}
+            <h4 style="color: var(--bu-purple); margin-bottom: 15px;">รายละเอียด: ${description}</h4>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 15px; margin-bottom: 20px;">
+                <p style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Zone: <strong>${zoneName}</strong></p>
+            </div>
+        `;
+
+        if (itemRes.data && itemRes.data.length > 0) {
+            html += `<h5 style="margin-bottom: 10px;">Item Master Records (${itemRes.data.length})</h5>
+                <div class="popup-item-list" style="margin-bottom: 25px;">
+                    ${itemRes.data.map(item => `
+                        <div class="popup-item-card" style="padding: 12px; font-size: 0.85rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="color: #666;">Asset Code:</span>
+                                <strong style="color: var(--bu-purple);">${item.asset_code}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #666;">Inventory Code:</span>
+                                <strong>${item.inventory_code || '-'}</strong>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        if (invRes.data && invRes.data.length > 0) {
+            html += `<h5 style="margin-bottom: 10px;">Inventory Records (${invRes.data.length})</h5>
+                <div class="popup-item-list">
+                    ${invRes.data.map(item => `
+                        <div class="popup-item-card" style="padding: 12px; font-size: 0.85rem;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span style="color: #666;">ID:</span>
+                                <strong>${item.id}</strong>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #666;">Quantity:</span>
+                                <strong style="color: var(--bu-orange); font-size: 1rem;">${item.quantity}</strong>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>`;
+        }
+
+        popupContent.innerHTML = html;
+    } catch (err) {
+        console.error('Error fetching item details:', err);
+    } finally {
+        hideLoading();
+    }
+}
+
+function filterPopupItems(zoneName) {
+    const query = document.getElementById('popupSearch').value;
+    const listContainer = document.getElementById('popupItemList');
+    const matchCount = document.getElementById('popupMatchCount');
+    
+    if (listContainer) listContainer.innerHTML = renderPopupItemList(zoneName, query);
+    
+    // อัปเดตตัวเลขจำนวนที่ค้นเจอ
+    const zoneInfo = dashboardData[zoneName] || { descriptions: {} };
+    const count = Object.keys(zoneInfo.descriptions).filter(desc => 
+        desc.toLowerCase().includes(query.toLowerCase())
+    ).length;
+    if (matchCount) matchCount.innerText = `${count} รายการ`;
 }
 
 function closeZonePopup() {

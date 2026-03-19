@@ -971,10 +971,29 @@ tbody tr {
 }
 
 .slot:hover {
-    transform: translateY(-5px) scale(1.02);
-    box-shadow: 0 15px 30px rgba(0,0,0,0.15);
-    z-index: 20;
-    filter: brightness(1.1);
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+    z-index: 100;
+    filter: brightness(1.15);
+    border-color: #fff;
+}
+
+.slot:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bu-purple);
+    color: #fff;
+    padding: 8px 15px;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: 1000;
+    margin-bottom: 10px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    pointer-events: none;
 }
 
 .slot.active {
