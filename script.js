@@ -39,17 +39,73 @@ let activeFilters = {
 function toggleFilterDropdown(event, view, column) {
     event.stopPropagation();
     const dropdownId = `filter-dropdown-${view}-${column}`;
-    const dropdown = document.getElementById(dropdownId);
+    
+    // Find the correct dropdown element (might be in th or in body)
+    const allElements = document.querySelectorAll(`[id="${dropdownId}"]`);
+    let dropdown = Array.from(allElements).find(el => document.getElementById('mainContent').contains(el)) || allElements[0];
+    
+    if (!dropdown) return;
+
+    // Remove any orphaned dropdowns of the same ID from body
+    Array.from(allElements).forEach(el => {
+        if (el !== dropdown && el.parentElement === document.body) el.remove();
+    });
+
+    const btn = event.currentTarget;
     const isShowing = dropdown.classList.contains('show');
 
     // Close all other dropdowns
     document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
 
     if (!isShowing) {
+        // Move to body to ensure it's not clipped by table-wrapper
+        document.body.appendChild(dropdown);
+        
+        // Initial position
+        updateDropdownPosition(dropdown, btn);
+        
         dropdown.classList.add('show');
         populateFilterOptions(view, column);
+
+        // Store reference for scroll repositioning
+        dropdown._attachedBtn = btn;
     }
 }
+
+function updateDropdownPosition(dropdown, btn) {
+    if (!dropdown || !btn) return;
+    const rect = btn.getBoundingClientRect();
+    const dropdownWidth = 280; // Match CSS
+    
+    dropdown.style.top = (rect.bottom + 5) + 'px';
+    let leftPos = rect.left;
+    
+    // Prevent overflow right
+    if (leftPos + dropdownWidth > window.innerWidth) {
+        leftPos = window.innerWidth - dropdownWidth - 20;
+    }
+    dropdown.style.left = Math.max(10, leftPos) + 'px';
+}
+
+// Reposition open dropdowns on ANY scroll (window or table wrapper)
+document.addEventListener('scroll', () => {
+    const openDropdown = document.querySelector('.filter-dropdown.show');
+    if (openDropdown && openDropdown._attachedBtn) {
+        updateDropdownPosition(openDropdown, openDropdown._attachedBtn);
+    }
+}, true);
+
+// --- Horizontal Scroll Logic (Ctrl + Shift + Wheel) ---
+window.addEventListener('wheel', (e) => {
+    if (e.ctrlKey && e.shiftKey) {
+        const tableWrapper = e.target.closest('.table-wrapper');
+        if (tableWrapper) {
+            e.preventDefault();
+            // scrollLeft += deltaY (increased multiplier for smoother feel)
+            tableWrapper.scrollLeft += e.deltaY * 1.5;
+        }
+    }
+}, { passive: false });
 
 // Function to populate unique options in the filter dropdown
 async function populateFilterOptions(view, column) {

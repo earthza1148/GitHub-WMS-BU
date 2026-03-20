@@ -632,15 +632,13 @@ nav {
 }
 
 .filter-dropdown {
-    position: absolute;
-    top: calc(100% + 5px);
-    left: 0;
-    z-index: 5000; /* Ensure it's above table headers and other elements */
-    background: #ffffff !important; /* Fully opaque white */
+    position: fixed; /* Changed to fixed to break out of table-wrapper clipping */
+    z-index: 9999;
+    background: #ffffff !important;
     border-radius: 16px;
-    box-shadow: 0 20px 40px rgba(58, 46, 91, 0.25); /* Deeper shadow for premium feel */
+    box-shadow: 0 20px 40px rgba(58, 46, 91, 0.25);
     border: 1px solid rgba(58, 46, 91, 0.1);
-    width: 260px; /* Slightly wider */
+    width: 260px;
     padding: 18px;
     display: none;
     flex-direction: column;
@@ -648,6 +646,7 @@ nav {
     text-align: left;
     font-weight: 400;
     animation: slideDown 0.3s ease-out;
+    pointer-events: auto;
 }
 
 @keyframes slideDown {
@@ -800,11 +799,12 @@ nav {
     border-radius: 30px;
     padding: 10px;
     box-shadow: var(--shadow-premium);
-    overflow: hidden;
+    overflow-x: auto; /* Changed from hidden to auto to allow scrolling */
+    overflow-y: visible; /* Try to allow dropdowns to show (fixed is better though) */
     border: 1px solid var(--glass-border);
 }
 
-table { width: 100%; border-collapse: separate; border-spacing: 0 10px; }
+table { width: 100%; border-collapse: separate; border-spacing: 0 10px; min-width: 1000px; /* Ensure table has minimum width to force scroll if screen small */ }
 
 th {
     text-align: left;
