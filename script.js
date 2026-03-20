@@ -167,12 +167,12 @@ function showDashboard(user) {
             <p>Bangkok University</p>
         </div>
         <nav>
-            <div class="nav-item ${currentView === 'inventory' ? 'active' : ''}" onclick="switchView('inventory')"><span>📦</span> Inventory Master</div>
-            <div class="nav-item ${currentView === 'category' ? 'active' : ''}" onclick="switchView('category')"><span>📁</span> Category Master</div>
-            <div class="nav-item ${currentView === 'items' ? 'active' : ''}" onclick="switchView('items')"><span>🛠️</span> Item Master</div>
-            <div class="nav-item ${currentView === 'transactions' ? 'active' : ''}" onclick="switchView('transactions')"><span>🔄</span> Transaction Master</div>
-            ${user.rank === 'Master' ? `<div class="nav-item ${currentView === 'users' ? 'active' : ''}" onclick="switchView('users')"><span>👥</span> User Master</div>` : ''}
-            <div class="nav-item ${currentView === 'dashboard' ? 'active' : ''}" onclick="switchView('dashboard')"><span>📊</span> Dashboard</div>
+            <div class="nav-item ${currentView === 'inventory' ? 'active' : ''}" onclick="switchView('inventory')"><img src="รูป/Inventory Icon.png" class="nav-icon"> Inventory Master</div>
+            <div class="nav-item ${currentView === 'category' ? 'active' : ''}" onclick="switchView('category')"><img src="รูป/Category Icon.png" class="nav-icon"> Category Master</div>
+            <div class="nav-item ${currentView === 'items' ? 'active' : ''}" onclick="switchView('items')"><img src="รูป/Item Icon.png" class="nav-icon"> Item Master</div>
+            <div class="nav-item ${currentView === 'transactions' ? 'active' : ''}" onclick="switchView('transactions')"><img src="รูป/Transaction Icon.png" class="nav-icon"> Transaction Master</div>
+            ${user.rank === 'Master' ? `<div class="nav-item ${currentView === 'users' ? 'active' : ''}" onclick="switchView('users')"><img src="รูป/User Icon.png" class="nav-icon"> User Master</div>` : ''}
+            <div class="nav-item ${currentView === 'dashboard' ? 'active' : ''}" onclick="switchView('dashboard')"><img src="รูป/Dashboard Icon.png" class="nav-icon"> Dashboard</div>
         </nav>
         <div class="sidebar-footer">
             <div class="sidebar-user-info">
@@ -185,7 +185,7 @@ function showDashboard(user) {
     <!-- 4. เนื้อหาหลัก (Dashboard) -->
     <div class="dashboard-container">
         <div class="dashboard-header">
-            <h2 id="viewTitle">📦 Inventory Master</h2>
+            <h2 id="viewTitle"><img src="รูป/Inventory Icon.png" class="view-icon"> Inventory Master</h2>
             <div class="user-info-brief">
                 <strong>คุณ ${user.name}</strong>
                 <span>สิทธิ์: ${user.rank}</span>
@@ -230,7 +230,14 @@ function toggleSidebar() {
 function switchView(view) {
     currentView = view;
     // ปรับชื่อ Title
-    const titles = { 'dashboard': '📊 Dashboard', 'inventory': '📦 Inventory Master', 'category': '📁 Category Master', 'items': '🛠️ Item Master', 'transactions': '🔄 Transaction Master', 'users': '👥 User Master' };
+    const titles = { 
+        'dashboard': '<img src="รูป/Dashboard Icon.png" class="view-icon"> Dashboard', 
+        'inventory': '<img src="รูป/Inventory Icon.png" class="view-icon"> Inventory Master', 
+        'category': '<img src="รูป/Category Icon.png" class="view-icon"> Category Master', 
+        'items': '<img src="รูป/Item Icon.png" class="view-icon"> Item Master', 
+        'transactions': '<img src="รูป/Transaction Icon.png" class="view-icon"> Transaction Master', 
+        'users': '<img src="รูป/User Icon.png" class="view-icon"> User Master' 
+    };
     if (document.getElementById('viewTitle')) {
         document.getElementById('viewTitle').innerHTML = titles[view];
     }
