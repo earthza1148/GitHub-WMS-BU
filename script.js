@@ -26,6 +26,151 @@ let currentCategoryPage = 0;
 let currentTransactionPage = 0;
 let currentUserPage = 0;
 
+// --- Global Filters State ---
+let activeFilters = {
+    inventory: {},
+    items: {},
+    category: {},
+    transactions: {},
+    users: {}
+};
+
+// Function to toggle filter dropdown
+function toggleFilterDropdown(event, view, column) {
+    event.stopPropagation();
+    const dropdownId = `filter-dropdown-${view}-${column}`;
+    const dropdown = document.getElementById(dropdownId);
+    const isShowing = dropdown.classList.contains('show');
+
+    // Close all other dropdowns
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+
+    if (!isShowing) {
+        dropdown.classList.add('show');
+        populateFilterOptions(view, column);
+    }
+}
+
+// Function to populate unique options in the filter dropdown
+async function populateFilterOptions(view, column) {
+    const dropdown = document.getElementById(`filter-dropdown-${view}-${column}`);
+    const optionsContainer = dropdown.querySelector('.filter-options');
+    const searchInput = dropdown.querySelector('.filter-search');
+    const tableName = getTableNameFromView(view);
+    const dbColumn = getDbColumnFromViewColumn(view, column);
+
+    optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #666;">กำลังโหลด...</div>';
+
+    try {
+        // Fetch unique values from Supabase
+        // Note: For large datasets, this might be slow. Optimization: Cache unique values or limit.
+        const { data, error } = await _supabase
+            .from(tableName)
+            .select(dbColumn)
+            .order(dbColumn, { ascending: true });
+
+        if (error) throw error;
+
+        // Get unique values and remove nulls
+        let uniqueValues = [...new Set(data.map(item => String(item[dbColumn] === null ? '(ว่าง)' : item[dbColumn])))];
+        
+        const renderOptions = (filterText = '') => {
+            const filtered = uniqueValues.filter(v => v.toLowerCase().includes(filterText.toLowerCase()));
+            const selected = activeFilters[view][column] || [];
+
+            optionsContainer.innerHTML = filtered.map(val => `
+                <label class="filter-option">
+                    <input type="checkbox" value="${val}" ${selected.includes(val) ? 'checked' : ''} onchange="updateFilterSelection('${view}', '${column}', '${val}', this.checked)">
+                    <span>${val}</span>
+                </label>
+            `).join('');
+            if (filtered.length === 0) optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #999; text-align: center;">ไม่พบข้อมูล</div>';
+        };
+
+        renderOptions();
+
+        searchInput.oninput = (e) => renderOptions(e.target.value);
+
+    } catch (err) {
+        console.error('Error fetching unique values:', err);
+        optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: red;">โหลดข้อมูลล้มเหลว</div>';
+    }
+}
+
+function updateFilterSelection(view, column, value, isChecked) {
+    if (!activeFilters[view][column]) activeFilters[view][column] = [];
+    if (isChecked) {
+        if (!activeFilters[view][column].includes(value)) activeFilters[view][column].push(value);
+    } else {
+        activeFilters[view][column] = activeFilters[view][column].filter(v => v !== value);
+    }
+}
+
+function selectAllFilters(view, column, isAll) {
+    const dropdown = document.getElementById(`filter-dropdown-${view}-${column}`);
+    const checkboxes = dropdown.querySelectorAll('.filter-options input[type="checkbox"]');
+    checkboxes.forEach(cb => {
+        cb.checked = isAll;
+        updateFilterSelection(view, column, cb.value, isAll);
+    });
+}
+
+function applyFilter(view) {
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+    
+    // Update filter button active state
+    for (const column in activeFilters[view]) {
+        const btn = document.getElementById(`filter-btn-${view}-${column}`);
+        if (btn) {
+            if (activeFilters[view][column].length > 0) btn.classList.add('active');
+            else btn.classList.remove('active');
+        }
+    }
+
+    // Load data with new filters
+    if (view === 'inventory') loadInventoryData(0);
+    else if (view === 'items') loadItemData(0);
+    else if (view === 'category') loadCategoryData(0);
+    else if (view === 'transactions') loadTransactionData(0);
+    else if (view === 'users') loadUserData(0);
+}
+
+function clearFilter(view, column) {
+    activeFilters[view][column] = [];
+    const btn = document.getElementById(`filter-btn-${view}-${column}`);
+    if (btn) btn.classList.remove('active');
+    applyFilter(view);
+}
+
+// Helper to get Table Name
+function getTableNameFromView(view) {
+    const map = {
+        inventory: 'Inventory Master',
+        items: 'Item Master',
+        category: 'Category Master',
+        transactions: 'Transection Inventory',
+        users: 'User Master'
+    };
+    return map[view];
+}
+
+// Helper to map UI column to DB column
+function getDbColumnFromViewColumn(view, column) {
+    const maps = {
+        inventory: { id: 'id', zone: 'zone', desc: 'descriprion', status: 'active', remark: 'remark' },
+        items: { asset: 'asset_code', inv: 'inventory_code', cat: 'category_id', desc: 'description', zone: 'location_zone', status: 'active' },
+        category: { id: 'id', name: 'category_name' },
+        transactions: { id: 'id', code: 'code', cat_id: 'id_category', asset: 'asset_code', inv: 'inventory_code', desc: 'description', type: 'movement_type', loc: 'to_location', status: 'status' },
+        users: { id: 'id', name: 'name', login: 'user_id', rank: 'rank', status: 'status' }
+    };
+    return maps[view][column];
+}
+
+// Close dropdowns on outside click
+window.addEventListener('click', () => {
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+});
+
 // Helper: สร้างปุ่ม Pagination
 function renderPagination(containerId, totalCount, currentPage, onPageChange) {
     const container = document.getElementById(containerId);
@@ -279,7 +424,18 @@ function renderInventoryView() {
         </div>
         <div class="table-wrapper">
             <table>
-                <thead><tr><th>ID</th><th>Zone</th><th>Description</th><th>Quantity</th><th>Image</th><th>Status</th><th>Remark</th>${hasPermission ? '<th>Actions</th>' : ''}</tr></thead>
+                <thead>
+                    <tr>
+                        <th>${getFilterHeader('inventory', 'id', 'ID')}</th>
+                        <th>${getFilterHeader('inventory', 'zone', 'Zone')}</th>
+                        <th>${getFilterHeader('inventory', 'desc', 'Description')}</th>
+                        <th>Quantity</th>
+                        <th>Image</th>
+                        <th>${getFilterHeader('inventory', 'status', 'Status')}</th>
+                        <th>${getFilterHeader('inventory', 'remark', 'Remark')}</th>
+                        ${hasPermission ? '<th>Actions</th>' : ''}
+                    </tr>
+                </thead>
                 <tbody id="inventoryTableBody"></tbody>
             </table>
         </div>
@@ -293,6 +449,7 @@ async function loadInventoryData(page = 0) {
     const tableBody = document.getElementById('inventoryTableBody');
     if (!tableBody) return;
 
+    // Global Search
     const searchZone = document.getElementById('searchZone')?.value || '';
     const searchDesc = document.getElementById('searchDesc')?.value || '';
 
@@ -300,8 +457,31 @@ async function loadInventoryData(page = 0) {
     try {
         let query = _supabase.from('Inventory Master').select('*', { count: 'exact' });
         
+        // Apply Global Search
         if (searchZone) query = query.ilike('zone', `%${searchZone}%`);
         if (searchDesc) query = query.ilike('descriprion', `%${searchDesc}%`);
+
+        // Apply Excel-style filters
+        for (const col in activeFilters.inventory) {
+            const vals = activeFilters.inventory[col];
+            if (vals && vals.length > 0) {
+                const dbCol = getDbColumnFromViewColumn('inventory', col);
+                
+                // Special handling for boolean 'active' status
+                if (col === 'status') {
+                    const mappedVals = vals.map(v => v === 'true');
+                    query = query.in(dbCol, mappedVals);
+                } else {
+                    if (vals.includes('(ว่าง)')) {
+                        const nonNulls = vals.filter(v => v !== '(ว่าง)');
+                        if (nonNulls.length > 0) query = query.or(`${dbCol}.in.(${nonNulls.join(',')}),${dbCol}.is.null`);
+                        else query = query.is(dbCol, null);
+                    } else {
+                        query = query.in(dbCol, vals);
+                    }
+                }
+            }
+        }
 
         const { data, error, count } = await query
             .order('id', { ascending: true })
@@ -424,7 +604,17 @@ function renderItemView() {
         </div>
         <div class="table-wrapper">
             <table>
-                <thead><tr><th>Asset Code</th><th>Inventory Code</th><th>Category ID</th><th>Description</th><th>Location Zone</th><th>Status</th>${hasPermission ? '<th>Actions</th>' : ''}</tr></thead>
+                <thead>
+                    <tr>
+                        <th>${getFilterHeader('items', 'asset', 'Asset Code')}</th>
+                        <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
+                        <th>${getFilterHeader('items', 'cat', 'Category ID')}</th>
+                        <th>${getFilterHeader('items', 'desc', 'Description')}</th>
+                        <th>${getFilterHeader('items', 'zone', 'Location Zone')}</th>
+                        <th>${getFilterHeader('items', 'status', 'Status')}</th>
+                        ${hasPermission ? '<th>Actions</th>' : ''}
+                    </tr>
+                </thead>
                 <tbody id="itemTableBody"></tbody>
             </table>
         </div>
@@ -438,6 +628,7 @@ async function loadItemData(page = 0) {
     const tableBody = document.getElementById('itemTableBody');
     if (!tableBody) return;
 
+    // Global search
     const searchCode = document.getElementById('searchAssetInventory')?.value || '';
     const searchDescCat = document.getElementById('searchItemDescCat')?.value || '';
 
@@ -445,11 +636,32 @@ async function loadItemData(page = 0) {
     try {
         let query = _supabase.from('Item Master').select('*', { count: 'exact' });
         
+        // Apply Global Search
         if (searchCode) {
             query = query.or(`asset_code.ilike.%${searchCode}%,inventory_code.ilike.%${searchCode}%`);
         }
         if (searchDescCat) {
             query = query.or(`description.ilike.%${searchDescCat}%,category_id.ilike.%${searchDescCat}%`);
+        }
+
+        // Apply Excel-style filters
+        for (const col in activeFilters.items) {
+            const vals = activeFilters.items[col];
+            if (vals && vals.length > 0) {
+                const dbCol = getDbColumnFromViewColumn('items', col);
+                if (col === 'status') {
+                    const mappedVals = vals.map(v => v === 'true');
+                    query = query.in(dbCol, mappedVals);
+                } else {
+                    if (vals.includes('(ว่าง)')) {
+                        const nonNulls = vals.filter(v => v !== '(ว่าง)');
+                        if (nonNulls.length > 0) query = query.or(`${dbCol}.in.(${nonNulls.join(',')}),${dbCol}.is.null`);
+                        else query = query.is(dbCol, null);
+                    } else {
+                        query = query.in(dbCol, vals);
+                    }
+                }
+            }
         }
 
         const { data, error, count } = await query
@@ -582,7 +794,13 @@ function renderCategoryView() {
         </div>
         <div class="table-wrapper">
             <table>
-                <thead><tr><th>ID</th><th>Category Name</th>${hasPermission ? '<th>Actions</th>' : ''}</tr></thead>
+                <thead>
+                    <tr>
+                        <th>${getFilterHeader('category', 'id', 'ID')}</th>
+                        <th>${getFilterHeader('category', 'name', 'Category Name')}</th>
+                        ${hasPermission ? '<th>Actions</th>' : ''}
+                    </tr>
+                </thead>
                 <tbody id="categoryTableBody"></tbody>
             </table>
         </div>
@@ -596,6 +814,7 @@ async function loadCategoryData(page = 0) {
     const tableBody = document.getElementById('categoryTableBody');
     if (!tableBody) return;
 
+    // Global search
     const searchId = document.getElementById('searchCatId')?.value || '';
     const searchName = document.getElementById('searchCatName')?.value || '';
 
@@ -603,8 +822,24 @@ async function loadCategoryData(page = 0) {
     try {
         let query = _supabase.from('Category Master').select('*', { count: 'exact' });
         
+        // Apply Global Search
         if (searchId) query = query.ilike('id', `%${searchId}%`);
         if (searchName) query = query.ilike('category_name', `%${searchName}%`);
+
+        // Apply Excel-style filters
+        for (const col in activeFilters.category) {
+            const vals = activeFilters.category[col];
+            if (vals && vals.length > 0) {
+                const dbCol = getDbColumnFromViewColumn('category', col);
+                if (vals.includes('(ว่าง)')) {
+                    const nonNulls = vals.filter(v => v !== '(ว่าง)');
+                    if (nonNulls.length > 0) query = query.or(`${dbCol}.in.(${nonNulls.join(',')}),${dbCol}.is.null`);
+                    else query = query.is(dbCol, null);
+                } else {
+                    query = query.in(dbCol, vals);
+                }
+            }
+        }
 
         const { data, error, count } = await query
             .order('id', { ascending: true })
@@ -688,6 +923,27 @@ async function deleteCategoryItem(id) {
 }
 
 // --- Transection Master View ---
+function getFilterHeader(view, column, label) {
+    return `
+        <div class="filter-header">
+            <span>${label}</span>
+            <button id="filter-btn-${view}-${column}" class="filter-btn" onclick="toggleFilterDropdown(event, '${view}', '${column}')">▼</button>
+            <div id="filter-dropdown-${view}-${column}" class="filter-dropdown" onclick="event.stopPropagation()">
+                <input type="text" class="filter-search" placeholder="Search...">
+                <div style="margin: 5px 0; display: flex; gap: 10px;">
+                    <a href="javascript:void(0)" onclick="selectAllFilters('${view}', '${column}', true)" style="font-size: 0.7rem;">Select All</a>
+                    <a href="javascript:void(0)" onclick="selectAllFilters('${view}', '${column}', false)" style="font-size: 0.7rem;">Deselect All</a>
+                </div>
+                <div class="filter-options"></div>
+                <div class="filter-actions">
+                    <button class="btn-filter-clear" onclick="clearFilter('${view}', '${column}')">Clear</button>
+                    <button class="btn-filter-apply" onclick="applyFilter('${view}')">Apply</button>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
 function renderTransactionView() {
     const mainContent = document.getElementById('mainContent');
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
@@ -698,12 +954,29 @@ function renderTransactionView() {
                 <input type="text" id="searchTransAsset" class="search-input" placeholder="🔍 Asset or Inventory Code..." oninput="filterTransactionTable()">
             </div>
             <div style="display: flex; gap: 10px;">
-                ${hasPermission ? `<button class="btn-add" style="background: linear-gradient(135deg, #0984e3 0%, #3a7bd5 100%);" onclick="openTransactionModal(null, 'transfer')"><span>🔄</span> ย้ายของ</button><button class="btn-add" onclick="openTransactionModal(null, 'add')"><span>➕</span> Add Transection</button>` : ''}
+                ${hasPermission ? `
+                    <button class="btn-add" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);" onclick="exportTransactionsToExcel()"><span>📊</span> Export to Excel</button>
+                    <button class="btn-add" style="background: linear-gradient(135deg, #0984e3 0%, #3a7bd5 100%);" onclick="openTransactionModal(null, 'transfer')"><span>🔄</span> ย้ายของ</button>
+                    <button class="btn-add" onclick="openTransactionModal(null, 'add')"><span>➕</span> Add Transection</button>
+                ` : ''}
             </div>
         </div>
         <div class="table-wrapper">
             <table>
-                <thead><tr><th>ID</th><th>Code</th><th>Category ID</th><th>Asset Code</th><th>Inventory Code</th><th>Description</th><th>Type</th><th>To Location</th><th>Status</th>${hasPermission ? '<th>Actions</th>' : ''}</tr></thead>
+                <thead>
+                    <tr>
+                        <th>${getFilterHeader('transactions', 'id', 'ID')}</th>
+                        <th>${getFilterHeader('transactions', 'code', 'Code')}</th>
+                        <th>${getFilterHeader('transactions', 'cat_id', 'Category ID')}</th>
+                        <th>${getFilterHeader('transactions', 'asset', 'Asset Code')}</th>
+                        <th>${getFilterHeader('transactions', 'inv', 'Inventory Code')}</th>
+                        <th>${getFilterHeader('transactions', 'desc', 'Description')}</th>
+                        <th>${getFilterHeader('transactions', 'type', 'Type')}</th>
+                        <th>${getFilterHeader('transactions', 'loc', 'To Location')}</th>
+                        <th>${getFilterHeader('transactions', 'status', 'Status')}</th>
+                        ${hasPermission ? '<th>Actions</th>' : ''}
+                    </tr>
+                </thead>
                 <tbody id="transactionTableBody"></tbody>
             </table>
         </div>
@@ -717,6 +990,7 @@ async function loadTransactionData(page = 0) {
     const tableBody = document.getElementById('transactionTableBody');
     if (!tableBody) return;
 
+    // Existing search (global)
     const searchCode = document.getElementById('searchTransCode')?.value || '';
     const searchAsset = document.getElementById('searchTransAsset')?.value || '';
 
@@ -724,9 +998,29 @@ async function loadTransactionData(page = 0) {
     try {
         let query = _supabase.from('Transection Inventory').select('*', { count: 'exact' });
         
+        // Apply global searches
         if (searchCode) query = query.ilike('code', `%${searchCode}%`);
         if (searchAsset) {
             query = query.or(`asset_code.ilike.%${searchAsset}%,inventory_code.ilike.%${searchAsset}%`);
+        }
+
+        // Apply Excel-style filters
+        for (const col in activeFilters.transactions) {
+            const vals = activeFilters.transactions[col];
+            if (vals && vals.length > 0) {
+                const dbCol = getDbColumnFromViewColumn('transactions', col);
+                // Handle nulls
+                if (vals.includes('(ว่าง)')) {
+                    const nonNulls = vals.filter(v => v !== '(ว่าง)');
+                    if (nonNulls.length > 0) {
+                        query = query.or(`${dbCol}.in.(${nonNulls.join(',')}),${dbCol}.is.null`);
+                    } else {
+                        query = query.is(dbCol, null);
+                    }
+                } else {
+                    query = query.in(dbCol, vals);
+                }
+            }
         }
 
         const { data, error, count } = await query
@@ -1038,7 +1332,17 @@ function renderUserView() {
         </div>
         <div class="table-wrapper">
             <table>
-                <thead><tr><th>ID</th><th>Name</th><th>User ID</th><th>Password</th><th>Rank</th><th>Status</th><th>Actions</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th>${getFilterHeader('users', 'id', 'ID')}</th>
+                        <th>${getFilterHeader('users', 'name', 'Name')}</th>
+                        <th>${getFilterHeader('users', 'login', 'User ID')}</th>
+                        <th>Password</th>
+                        <th>${getFilterHeader('users', 'rank', 'Rank')}</th>
+                        <th>${getFilterHeader('users', 'status', 'Status')}</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
                 <tbody id="userTableBody"></tbody>
             </table>
         </div>
@@ -1052,6 +1356,7 @@ async function loadUserData(page = 0) {
     const tableBody = document.getElementById('userTableBody');
     if (!tableBody) return;
 
+    // Global search
     const searchId = document.getElementById('searchUserId')?.value || '';
     const searchName = document.getElementById('searchUserName')?.value || '';
 
@@ -1059,8 +1364,29 @@ async function loadUserData(page = 0) {
     try { 
         let query = _supabase.from('User Master').select('*', { count: 'exact' });
         
+        // Apply Global Search
         if (searchId) query = query.ilike('user_id', `%${searchId}%`);
         if (searchName) query = query.ilike('name', `%${searchName}%`);
+
+        // Apply Excel-style filters
+        for (const col in activeFilters.users) {
+            const vals = activeFilters.users[col];
+            if (vals && vals.length > 0) {
+                const dbCol = getDbColumnFromViewColumn('users', col);
+                if (col === 'status') {
+                    const mappedVals = vals.map(v => v === 'true');
+                    query = query.in(dbCol, mappedVals);
+                } else {
+                    if (vals.includes('(ว่าง)')) {
+                        const nonNulls = vals.filter(v => v !== '(ว่าง)');
+                        if (nonNulls.length > 0) query = query.or(`${dbCol}.in.(${nonNulls.join(',')}),${dbCol}.is.null`);
+                        else query = query.is(dbCol, null);
+                    } else {
+                        query = query.in(dbCol, vals);
+                    }
+                }
+            }
+        }
 
         const { data, error, count } = await query
             .order('id', { ascending: true })
@@ -1716,3 +2042,79 @@ function closeZonePopup() {
     // Also remove highlight from layout
     document.querySelectorAll('.slot').forEach(s => s.classList.remove('active'));
 }
+
+// --- Export to Excel Implementation ---
+async function exportTransactionsToExcel() {
+    showLoading();
+    try {
+        // Fetch ALL data from Transection Inventory
+        let allData = [];
+        let from = 0;
+        let to = 999;
+        let hasMore = true;
+
+        while (hasMore) {
+            const { data, error } = await _supabase
+                .from('Transection Inventory')
+                .select('*')
+                .order('id', { ascending: false })
+                .range(from, to);
+
+            if (error) throw error;
+            if (data.length === 0) {
+                hasMore = false;
+            } else {
+                allData = allData.concat(data);
+                from += 1000;
+                to += 1000;
+                if (data.length < 1000) hasMore = false;
+            }
+        }
+
+        if (allData.length === 0) {
+            alert('ไม่มีข้อมูลที่จะ Export');
+            return;
+        }
+
+        // Format data for Excel
+        const excelData = allData.map(item => ({
+            'ID': item.id,
+            'Transaction Code': item.code || '',
+            'Movement Type': item.movement_type || '',
+            'From Zone': item.from_zone || '',
+            'To Location': item.to_location || '',
+            'Status': item.status || '',
+            'Asset Code': item.asset_code || '',
+            'Inventory Code': item.inventory_code || '',
+            'Description': item.description || '',
+            'Category ID': item.id_category || '',
+            'Category Name': item.category || '',
+            'Quantity': item.quantity || 0,
+            'Name Lender': item.name_lender || '',
+            'Name Borrower': item.name_borrower || '',
+            'Lending Date': item.lending_date ? new Date(item.lending_date).toLocaleString('th-TH') : '',
+            'Return Date': item.date_returned ? new Date(item.date_returned).toLocaleString('th-TH') : '',
+            'Remark': item.remark || '',
+            'Created By': item.create_id || '',
+            'Created At': item.created_at || '',
+            'Last Edited By': item.edit_id || '',
+            'Last Edited At': item.edit_at || ''
+        }));
+
+        // Create Workbook
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Transactions');
+
+        // Download file
+        const fileName = `Transactions_Export_${new Date().toISOString().slice(0,10)}.xlsx`;
+        XLSX.writeFile(workbook, fileName);
+
+    } catch (err) {
+        console.error('Export Error:', err);
+        alert('เกิดข้อผิดพลาดในการ Export: ' + err.message);
+    } finally {
+        hideLoading();
+    }
+}
+

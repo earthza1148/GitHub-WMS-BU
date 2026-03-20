@@ -585,6 +585,130 @@ nav {
     width: 320px;
 }
 
+.column-filter {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid #e1e8ef;
+    font-size: 0.8rem;
+    margin-top: 8px;
+    outline: none;
+    transition: var(--transition-smooth);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    display: block;
+}
+
+.column-filter:focus {
+    border-color: var(--bu-purple);
+    box-shadow: 0 4px 12px rgba(58, 46, 91, 0.1);
+    background: #fff;
+}
+
+/* Excel-style Filter CSS */
+.filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    position: relative;
+}
+
+.filter-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: #a0aec0;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover, .filter-btn.active {
+    color: var(--bu-purple);
+    background: rgba(58, 46, 91, 0.1);
+}
+
+.filter-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1000;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+    border: 1px solid #e2e8f0;
+    width: 220px;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+    font-weight: 400;
+}
+
+.filter-dropdown.show {
+    display: flex;
+}
+
+.filter-search {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    outline: none;
+}
+
+.filter-options {
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.filter-option input {
+    cursor: pointer;
+}
+
+.filter-actions {
+    display: flex;
+    justify-content: space-between;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
+    margin-top: 5px;
+}
+
+.filter-actions button {
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    border: none;
+}
+
+.btn-filter-apply {
+    background: var(--bu-purple);
+    color: #fff;
+}
+
+.btn-filter-clear {
+    background: #f1f2f6;
+    color: #2d3436;
+}
+
 .btn-add {
     padding: 1.1rem 2.2rem;
     background: linear-gradient(135deg, var(--bu-orange) 0%, var(--bu-orange-light) 100%);
