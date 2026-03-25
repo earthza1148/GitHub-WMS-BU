@@ -1645,7 +1645,7 @@ async function renderDashboardView() {
 
     mainContent.innerHTML = `
         <!-- Main Stats Row -->
-        <div class="dashboard-stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 25px; margin-bottom: 35px;">
+        <div class="dashboard-stats-grid">
             <div class="stat-card modern-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%);">
                 <div class="card-icon">📦</div>
                 <div class="card-info">
@@ -1675,39 +1675,39 @@ async function renderDashboardView() {
         </div>
 
         <!-- Visual Analytics Row -->
-        <div style="display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 25px; margin-bottom: 35px;">
+        <div class="analytics-row">
             <!-- Column 1: Transaction Status Chart -->
-            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); display: flex; flex-direction: column; align-items: center;">
-                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px; align-self: flex-start;">📊 Transaction Status</h3>
-                <div style="width: 100%; height: 280px; position: relative;">
+            <div class="analytics-card">
+                <h3>📊 Transaction Status</h3>
+                <div class="chart-container">
                     <canvas id="statusChart"></canvas>
                 </div>
             </div>
 
             <!-- Column 2: Grouped Zones Bar Chart -->
-            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border);">
-                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px;">🏘️ จำนวนของแยกตาม Zone</h3>
-                <div style="width: 100%; height: 280px;">
+            <div class="analytics-card">
+                <h3>🏘️ จำนวนของแยกตาม Zone</h3>
+                <div class="chart-container">
                     <canvas id="zoneChart"></canvas>
                 </div>
             </div>
 
             <!-- Column 3: Category Summary Chart -->
-            <div class="analytics-card" style="background: #fff; border-radius: 30px; padding: 25px; box-shadow: var(--shadow-premium); border: 1px solid var(--glass-border); display: flex; flex-direction: column; align-items: center;">
-                <h3 style="color: var(--bu-purple); font-weight: 800; font-size: 1.1rem; margin-bottom: 20px; align-self: flex-start;">📁 Category Summary</h3>
-                <div style="width: 100%; height: 280px;">
+            <div class="analytics-card">
+                <h3>📁 Category Summary</h3>
+                <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
                 </div>
             </div>
         </div>
 
-        <div class="dashboard-controls" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; padding: 20px; background: #fff; border-radius: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.03);">
-            <div class="dashboard-layout-selector" style="margin-bottom:0">
+        <div class="dashboard-controls">
+            <div class="dashboard-layout-selector">
                 ${Object.keys(layoutConfigs).map(key => `
                     <button class="layout-btn ${currentLayout === key ? 'active' : ''}" onclick="changeLayout('${key}')">${layoutConfigs[key].label}</button>
                 `).join('')}
             </div>
-            <div class="legend-card" style="border: none; box-shadow: none; background: #f8f9fa; padding: 10px 20px;">
+            <div class="legend-card">
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#d9d9d9; border-radius:3px;"></span> 0</div>
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#7fd3ff; border-radius:3px;"></span> 1-10</div>
                 <div style="display:flex; align-items:center; gap:8px;"><span style="width:12px; height:12px; background:#97d055; border-radius:3px;"></span> 11-20</div>
@@ -1716,7 +1716,7 @@ async function renderDashboardView() {
             </div>
         </div>
 
-        <div class="layout-viewport" style="background: #fdfdfe; border-radius: 40px; border: 1px solid #eee;">
+        <div class="layout-viewport">
             <div id="layoutInteractive" class="layout-container" style="width: ${cfg.size.width}px; height: ${cfg.size.height}px;">
                 <!-- Rooms and Slots will be drawn here -->
             </div>
