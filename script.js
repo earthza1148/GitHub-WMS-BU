@@ -589,11 +589,84 @@ function filterInventoryTable() {
     }, 500);
 }
 
-function updateImagePreview(url) {
-    const container = document.getElementById('imagePreviewContainer');
+function getItemImage(item) {
+    if (!item) return '';
+    return item.Image || item.image || '';
+}
+
+function escapeAttribute(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function renderImagePreviewHtml(url, altText = 'Image Preview') {
+    if (url && url.trim() !== '') {
+        return `<img src="${escapeAttribute(url)}" alt="${escapeAttribute(altText)}" class="image-preview">`;
+    }
+    return `<div class="image-preview-empty">(ไม่มีรูปภาพพรีวิว)</div>`;
+}
+
+function updateImagePreview(url, containerId = 'imagePreviewContainer') {
+    const container = document.getElementById(containerId);
     if (!container) return;
-    if (url && url.trim() !== '') container.innerHTML = `<img src="${url}" style="max-width: 100%; max-height: 250px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 3px solid #fff;">`;
-    else container.innerHTML = `<div style="padding: 2rem; background: #f8f9fa; border-radius: 15px; color: #adb5bd; font-size: 0.9rem;">(ไม่มีรูปภาพพรีวิว)</div>`;
+    container.innerHTML = renderImagePreviewHtml(url);
+}
+
+function updateItemImagePreview(url) {
+    updateImagePreview(url, 'itemImagePreviewContainer');
+}
+
+function resizeImageFile(file, maxSize = 1200, quality = 0.82) {
+    return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/')) {
+            reject(new Error('กรุณาเลือกไฟล์รูปภาพเท่านั้น'));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+            const img = new Image();
+            img.onload = () => {
+                const scale = Math.min(maxSize / img.width, maxSize / img.height, 1);
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+            img.src = reader.result;
+        };
+        reader.onerror = () => reject(new Error('อ่านไฟล์รูปภาพไม่สำเร็จ'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function handleItemImageUpload(input) {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    try {
+        const imageData = await resizeImageFile(file);
+        const imageInput = document.getElementById('itm_image');
+        if (imageInput) imageInput.value = imageData;
+        updateItemImagePreview(imageData);
+    } catch (err) {
+        alert(err.message);
+        input.value = '';
+    }
+}
+
+function clearItemImage() {
+    const imageInput = document.getElementById('itm_image');
+    const uploadInput = document.getElementById('itm_image_upload');
+    if (imageInput) imageInput.value = '';
+    if (uploadInput) uploadInput.value = '';
+    updateItemImagePreview('');
 }
 
 function openInventoryModal(item, mode) {
@@ -607,7 +680,7 @@ function openInventoryModal(item, mode) {
             </div>
             <form id="inventoryForm">
                 <div class="modal-grid">
-                    <div class="form-group full-width" style="text-align: center;"><label>Image Preview</label><div id="imagePreviewContainer" style="margin-top: 10px;">${item && item.image ? `<img src="${item.image}" style="max-width: 100%; max-height: 250px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); border: 3px solid #fff;">` : `<div style="padding: 2rem; background: #f8f9fa; border-radius: 15px; color: #adb5bd; font-size: 0.9rem;">(ไม่มีรูปภาพพรีวิว)</div>`}</div></div>
+                    <div class="form-group full-width" style="text-align: center;"><label>Image Preview</label><div id="imagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(item ? item.image : '')}</div></div>
                     <div class="form-group"><label>ID</label><input type="text" id="inv_id" value="${item ? item.id : ''}" ${mode !== 'add' ? 'disabled' : ''} required></div>
                     <div class="form-group"><label>Zone</label><input type="text" id="inv_zone" value="${item ? (item.zone || '') : ''}" ${mode === 'view' ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Category ID</label><input type="text" id="inv_category" value="${item ? (item.id_category || '') : ''}" ${mode === 'view' ? 'disabled' : ''}></div>
@@ -666,6 +739,7 @@ function renderItemView() {
                         <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
                         <th>${getFilterHeader('items', 'cat', 'Category ID')}</th>
                         <th>${getFilterHeader('items', 'desc', 'Description')}</th>
+                        <th>Image</th>
                         <th>${getFilterHeader('items', 'zone', 'Location Zone')}</th>
                         <th>${getFilterHeader('items', 'status', 'Status')}</th>
                         ${hasPermission ? '<th>Actions</th>' : ''}
@@ -688,7 +762,9 @@ async function loadItemData(page = 0) {
     const searchCode = document.getElementById('searchAssetInventory')?.value || '';
     const searchDescCat = document.getElementById('searchItemDescCat')?.value || '';
 
-    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
+    const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
+    const colSpan = hasPermission ? 8 : 7;
+    tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
     try {
         let query = _supabase.from('Item Master').select('*', { count: 'exact' });
         
@@ -725,8 +801,9 @@ async function loadItemData(page = 0) {
             .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
         if (error) throw error;
+        itemMasterData = data || [];
         renderItemTable(data, count);
-    } catch (err) { console.error("Error loading item data:", err); tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>'; }
+    } catch (err) { console.error("Error loading item data:", err); tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center; color:red;">โหลดข้อมูลล้มเหลว</td></tr>`; }
 }
 
 function renderItemTable(data, totalCount) {
@@ -740,14 +817,22 @@ function renderItemTable(data, totalCount) {
         tr.onclick = () => {
             if (!isTextSelected()) openItemModal(item, 'view');
         };
+        const imageUrl = getItemImage(item);
+        const encodedAssetCode = encodeURIComponent(item.asset_code || '');
         tr.innerHTML = `
-            <td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
-            ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
+            <td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
     });
 
     renderPagination('itemPagination', totalCount, currentItemPage, 'loadItemData');
+}
+
+function openItemModalFromTable(encodedAssetCode, mode) {
+    const assetCode = decodeURIComponent(encodedAssetCode);
+    const item = itemMasterData.find(row => row.asset_code === assetCode);
+    if (item) openItemModal(item, mode);
 }
 
 let itemFilterTimeout;
@@ -763,6 +848,7 @@ function openItemModal(item, mode) {
     modal.style.display = 'flex';
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
     const isEditMode = (mode === 'add' || mode === 'edit') && hasPermission;
+    const imageValue = getItemImage(item);
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
@@ -775,6 +861,7 @@ function openItemModal(item, mode) {
                     <div class="form-group"><label>Inventory Code</label><input type="text" id="itm_inv" value="${item ? (item.inventory_code || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Category ID</label><input type="text" id="itm_cat" value="${item ? (item.category_id || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group full-width"><label>Description</label><input type="text" id="itm_desc" value="${item ? (item.description || '') : ''}" ${!isEditMode ? 'disabled' : ''} required></div>
+                    <div class="form-group full-width"><label>Image</label><div id="itemImagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(imageValue, 'Item Image')}</div><input type="hidden" id="itm_image" value="${escapeAttribute(imageValue)}">${isEditMode ? `<div class="image-upload-row"><input type="file" id="itm_image_upload" accept="image/*" onchange="handleItemImageUpload(this)"><button type="button" class="btn-clear-image" onclick="clearItemImage()">ล้างรูป</button></div>` : ''}</div>
                     <div class="form-group"><label>Location Zone</label><input type="text" id="itm_zone" value="${item ? (item.location_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Status</label><select id="itm_active" ${!isEditMode ? 'disabled' : ''}><option value="true" ${item && item.active ? 'selected' : ''}>Active</option><option value="false" ${item && !item.active ? 'selected' : ''}>Inactive</option></select></div>
                     <div class="form-group"><label>Created By (ID)</label><input type="text" value="${item ? (item.create_id || '') : currentUser.id}" disabled></div>
@@ -791,7 +878,7 @@ function openItemModal(item, mode) {
 async function saveItemRecord(mode) {
     showLoading();
     const assetCode = document.getElementById('itm_asset').value;
-    const itemData = { inventory_code: document.getElementById('itm_inv').value, category_id: document.getElementById('itm_cat').value, description: document.getElementById('itm_desc').value, location_zone: document.getElementById('itm_zone').value, active: document.getElementById('itm_active').value === 'true', edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
+    const itemData = { inventory_code: document.getElementById('itm_inv').value, category_id: document.getElementById('itm_cat').value, description: document.getElementById('itm_desc').value, Image: document.getElementById('itm_image').value, location_zone: document.getElementById('itm_zone').value, active: document.getElementById('itm_active').value === 'true', edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
     try {
         if (mode === 'add') {
             itemData.asset_code = assetCode;
@@ -802,7 +889,7 @@ async function saveItemRecord(mode) {
             
             // Sync with Inventory Master
             if (itemData.location_zone && itemData.description) {
-                await updateInventoryStock(itemData.location_zone, itemData.description, 1, itemData.category_id);
+                await updateInventoryStock(itemData.location_zone, itemData.description, 1, itemData.category_id, itemData.Image);
             }
             
             alert('เพิ่มไอเทมใหม่สำเร็จ!');
@@ -1874,7 +1961,7 @@ async function fetchDashboardData() {
         // Fetch all data in parallel
         const [invRes, itemRes, catRes, transRes] = await Promise.all([
             _supabase.from('Inventory Master').select('zone, descriprion, quantity, image, id_category'),
-            _supabase.from('Item Master').select('location_zone, description, category_id'),
+            _supabase.from('Item Master').select('*'),
             _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
             _supabase.from('Transection Inventory').select('status')
         ]);
@@ -1897,8 +1984,10 @@ async function fetchDashboardData() {
             
             const z = row.location_zone || 'Unknown';
             const desc = row.description || 'No Description';
+            const img = getItemImage(row) || null;
             if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
-            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: null };
+            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img };
+            if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
             uniqueDescs.add(desc);
         });
 
