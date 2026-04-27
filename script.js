@@ -20,6 +20,8 @@ let editingTransactionItem = null;
 
 // --- Pagination Settings ---
 const PAGE_SIZE = 500;
+const ITEM_PAGE_SIZE = 200;
+const FILTER_FETCH_SIZE = 1000;
 let currentInventoryPage = 0;
 let currentItemPage = 0;
 let currentCategoryPage = 0;
@@ -118,14 +120,7 @@ async function populateFilterOptions(view, column) {
     optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #666;">กำลังโหลด...</div>';
 
     try {
-        // Fetch unique values from Supabase
-        // Note: For large datasets, this might be slow. Optimization: Cache unique values or limit.
-        const { data, error } = await _supabase
-            .from(tableName)
-            .select(dbColumn)
-            .order(dbColumn, { ascending: true });
-
-        if (error) throw error;
+        const data = await fetchAllFilterColumnValues(tableName, dbColumn);
 
         // Get unique values and remove nulls
         let uniqueValues = [...new Set(data.map(item => String(item[dbColumn] === null ? '(ว่าง)' : item[dbColumn])))];
@@ -151,6 +146,26 @@ async function populateFilterOptions(view, column) {
         console.error('Error fetching unique values:', err);
         optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: red;">โหลดข้อมูลล้มเหลว</div>';
     }
+}
+
+async function fetchAllFilterColumnValues(tableName, dbColumn) {
+    let allRows = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await _supabase
+            .from(tableName)
+            .select(dbColumn)
+            .order(dbColumn, { ascending: true })
+            .range(from, from + FILTER_FETCH_SIZE - 1);
+
+        if (error) throw error;
+        allRows = allRows.concat(data || []);
+        if (!data || data.length < FILTER_FETCH_SIZE) break;
+        from += FILTER_FETCH_SIZE;
+    }
+
+    return allRows;
 }
 
 function updateFilterSelection(view, column, value, isChecked) {
@@ -227,25 +242,68 @@ window.addEventListener('click', () => {
     document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
 });
 
+document.addEventListener('click', (event) => {
+    const modal = event.target;
+    if (modal && modal.classList && modal.classList.contains('modal-overlay')) {
+        closeModal(modal.id);
+    }
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const activeDialog = document.getElementById('appDialogOverlay');
+    if (activeDialog && activeDialog.classList.contains('show')) return;
+
+    const openModal = Array.from(document.querySelectorAll('.modal-overlay'))
+        .reverse()
+        .find(modal => modal.style.display === 'flex');
+    if (openModal) closeModal(openModal.id);
+});
+
 // Helper: สร้างปุ่ม Pagination
-function renderPagination(containerId, totalCount, currentPage, onPageChange) {
+function renderPagination(containerId, totalCount, currentPage, onPageChange, pageSize = PAGE_SIZE, showNumberedPages = false) {
     const container = document.getElementById(containerId);
     if (!container) return;
 
-    const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+    const totalPages = Math.ceil(totalCount / pageSize);
     if (totalPages <= 1) {
         container.innerHTML = '';
         return;
     }
 
+    const startItem = currentPage * pageSize + 1;
+    const endItem = Math.min((currentPage + 1) * pageSize, totalCount);
+    const pageButtons = showNumberedPages ? renderNumberedPageButtons(totalPages, currentPage, onPageChange) : '';
+
     let html = `
         <button class="pagination-btn" ${currentPage === 0 ? 'disabled' : ''} onclick="${onPageChange}(0)">First</button>
         <button class="pagination-btn" ${currentPage === 0 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage - 1})">Prev</button>
-        <span class="pagination-info">หน้า ${currentPage + 1} จาก ${totalPages} (ทั้งหมด ${totalCount.toLocaleString()} รายการ)</span>
+        ${pageButtons}
+        <span class="pagination-info">หน้า ${currentPage + 1} จาก ${totalPages} | แสดง ${startItem.toLocaleString()}-${endItem.toLocaleString()} จาก ${totalCount.toLocaleString()} รายการ</span>
         <button class="pagination-btn" ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="${onPageChange}(${currentPage + 1})">Next</button>
         <button class="pagination-btn" ${currentPage >= totalPages - 1 ? 'disabled' : ''} onclick="${onPageChange}(${totalPages - 1})">Last</button>
     `;
     container.innerHTML = html;
+}
+
+function renderNumberedPageButtons(totalPages, currentPage, onPageChange) {
+    const pages = [];
+    const visibleRange = 2;
+
+    for (let i = 0; i < totalPages; i++) {
+        const isEdgePage = i === 0 || i === totalPages - 1;
+        const isNearCurrent = Math.abs(i - currentPage) <= visibleRange;
+        if (isEdgePage || isNearCurrent) {
+            pages.push(i);
+        }
+    }
+
+    let lastPage = -1;
+    return pages.map(page => {
+        const gap = page - lastPage > 1 ? '<span class="pagination-ellipsis">...</span>' : '';
+        lastPage = page;
+        return `${gap}<button class="pagination-btn pagination-number ${page === currentPage ? 'active' : ''}" onclick="${onPageChange}(${page})">${page + 1}</button>`;
+    }).join('');
 }
 
 function initLoading() {
@@ -269,6 +327,102 @@ function showLoading() {
 function hideLoading() {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.style.display = 'none';
+}
+
+let appDialogResolver = null;
+
+function initAppDialog() {
+    if (document.getElementById('appDialogOverlay')) return;
+
+    const dialog = document.createElement('div');
+    dialog.id = 'appDialogOverlay';
+    dialog.className = 'app-dialog-overlay';
+    dialog.innerHTML = `
+        <div class="app-dialog-card" role="dialog" aria-modal="true" aria-labelledby="appDialogTitle">
+            <div class="app-dialog-accent"></div>
+            <div class="app-dialog-body">
+                <div id="appDialogIcon" class="app-dialog-icon"></div>
+                <div class="app-dialog-copy">
+                    <h3 id="appDialogTitle"></h3>
+                    <p id="appDialogMessage"></p>
+                </div>
+            </div>
+            <div class="app-dialog-actions">
+                <button type="button" id="appDialogCancel" class="app-dialog-btn app-dialog-btn-secondary">ยกเลิก</button>
+                <button type="button" id="appDialogConfirm" class="app-dialog-btn app-dialog-btn-primary">ตกลง</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dialog);
+
+    document.getElementById('appDialogCancel').onclick = () => closeAppDialog(false);
+    document.getElementById('appDialogConfirm').onclick = () => closeAppDialog(true);
+    document.addEventListener('keydown', (event) => {
+        const activeDialog = document.getElementById('appDialogOverlay');
+        if (event.key === 'Escape' && activeDialog && activeDialog.classList.contains('show')) {
+            closeAppDialog(false);
+        }
+    });
+}
+
+function closeAppDialog(result) {
+    const dialog = document.getElementById('appDialogOverlay');
+    if (!dialog) return;
+    dialog.classList.remove('show');
+    setTimeout(() => { dialog.style.display = 'none'; }, 180);
+    if (appDialogResolver) {
+        appDialogResolver(result);
+        appDialogResolver = null;
+    }
+}
+
+function showAppDialog({ type = 'info', title = 'แจ้งเตือน', message = '', confirm = false, confirmText = 'ตกลง', cancelText = 'ยกเลิก' }) {
+    initAppDialog();
+
+    const dialog = document.getElementById('appDialogOverlay');
+    const icon = document.getElementById('appDialogIcon');
+    const titleEl = document.getElementById('appDialogTitle');
+    const messageEl = document.getElementById('appDialogMessage');
+    const cancelBtn = document.getElementById('appDialogCancel');
+    const confirmBtn = document.getElementById('appDialogConfirm');
+
+    const iconMap = { success: '✓', error: '!', warning: '?', info: 'i' };
+    dialog.className = `app-dialog-overlay show app-dialog-${type}`;
+    icon.textContent = iconMap[type] || iconMap.info;
+    icon.className = `app-dialog-icon app-dialog-icon-${type}`;
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    cancelBtn.textContent = cancelText;
+    confirmBtn.textContent = confirmText;
+    cancelBtn.style.display = confirm ? 'inline-flex' : 'none';
+
+    dialog.style.display = 'flex';
+    setTimeout(() => confirmBtn.focus(), 0);
+
+    return new Promise(resolve => {
+        appDialogResolver = resolve;
+    });
+}
+
+function showAppAlert(message, type = 'success', title = null) {
+    const titleMap = {
+        success: 'ดำเนินการสำเร็จ',
+        error: 'ไม่สามารถดำเนินการได้',
+        warning: 'โปรดตรวจสอบข้อมูล',
+        info: 'แจ้งเตือน'
+    };
+    return showAppDialog({ type, title: title || titleMap[type] || titleMap.info, message, confirm: false });
+}
+
+function showAppConfirm(message, options = {}) {
+    return showAppDialog({
+        type: options.type || 'warning',
+        title: options.title || 'ยืนยันการทำรายการ',
+        message,
+        confirm: true,
+        confirmText: options.confirmText || 'ยืนยัน',
+        cancelText: options.cancelText || 'ยกเลิก'
+    });
 }
 
 // Helper: เจน Code ตามวันเวลา
@@ -656,7 +810,7 @@ async function handleItemImageUpload(input) {
         if (imageInput) imageInput.value = imageData;
         updateItemImagePreview(imageData);
     } catch (err) {
-        alert(err.message);
+        showAppAlert(err.message, 'error');
         input.value = '';
     }
 }
@@ -706,17 +860,17 @@ async function saveInventoryItem(mode) {
     const id = document.getElementById('inv_id').value;
     const itemData = { zone: document.getElementById('inv_zone').value, id_category: document.getElementById('inv_category').value, descriprion: document.getElementById('inv_description').value, quantity: parseInt(document.getElementById('inv_quantity').value), image: document.getElementById('inv_image').value, active: document.getElementById('inv_active').value === 'true', remark: document.getElementById('inv_remark').value, owner: document.getElementById('inv_owner').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
     try {
-        if (mode === 'add') { itemData.id = id; itemData.create_id = currentUser.id; itemData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Inventory Master').insert([itemData]); if (error) throw error; alert('เพิ่มรายการใหม่สำเร็จ!'); }
-        else { const { error } = await _supabase.from('Inventory Master').update(itemData).eq('id', id); if (error) throw error; alert('แก้ไขข้อมูลสำเร็จ!'); }
+        if (mode === 'add') { itemData.id = id; itemData.create_id = currentUser.id; itemData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Inventory Master').insert([itemData]); if (error) throw error; showAppAlert('เพิ่มรายการใหม่สำเร็จ!', 'success'); }
+        else { const { error } = await _supabase.from('Inventory Master').update(itemData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขข้อมูลสำเร็จ!', 'success'); }
         closeModal('inventoryModal'); loadInventoryData();
-    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 async function deleteInventoryItem(id) {
-    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรายการ ID: ${id}?`)) return;
+    if (!await showAppConfirm(`คุณแน่ใจหรือไม่ว่าต้องการลบรายการ ID: ${id}?`, { confirmText: 'ลบรายการ' })) return;
     showLoading();
-    try { const { error } = await _supabase.from('Inventory Master').delete().eq('id', id); if (error) throw error; alert('ลบข้อมูลสำเร็จ!'); loadInventoryData(); }
-    catch (err) { alert('ลบข้อมูลไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    try { const { error } = await _supabase.from('Inventory Master').delete().eq('id', id); if (error) throw error; showAppAlert('ลบข้อมูลสำเร็จ!', 'success'); loadInventoryData(); }
+    catch (err) { showAppAlert('ลบข้อมูลไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 // --- Item Master View ---
@@ -735,6 +889,7 @@ function renderItemView() {
             <table>
                 <thead>
                     <tr>
+                        <th>No.</th>
                         <th>${getFilterHeader('items', 'asset', 'Asset Code')}</th>
                         <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
                         <th>${getFilterHeader('items', 'cat', 'Category ID')}</th>
@@ -763,7 +918,7 @@ async function loadItemData(page = 0) {
     const searchDescCat = document.getElementById('searchItemDescCat')?.value || '';
 
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
-    const colSpan = hasPermission ? 8 : 7;
+    const colSpan = hasPermission ? 9 : 8;
     tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
     try {
         let query = _supabase.from('Item Master').select('*', { count: 'exact' });
@@ -798,7 +953,7 @@ async function loadItemData(page = 0) {
 
         const { data, error, count } = await query
             .order('asset_code', { ascending: true })
-            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+            .range(page * ITEM_PAGE_SIZE, (page + 1) * ITEM_PAGE_SIZE - 1);
 
         if (error) throw error;
         itemMasterData = data || [];
@@ -812,21 +967,22 @@ function renderItemTable(data, totalCount) {
     tableBody.innerHTML = '';
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
     
-    data.forEach(item => {
+    data.forEach((item, index) => {
         const tr = document.createElement('tr');
         tr.onclick = () => {
             if (!isTextSelected()) openItemModal(item, 'view');
         };
         const imageUrl = getItemImage(item);
         const encodedAssetCode = encodeURIComponent(item.asset_code || '');
+        const rowNumber = currentItemPage * ITEM_PAGE_SIZE + index + 1;
         tr.innerHTML = `
-            <td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
     });
 
-    renderPagination('itemPagination', totalCount, currentItemPage, 'loadItemData');
+    renderPagination('itemPagination', totalCount, currentItemPage, 'loadItemData', ITEM_PAGE_SIZE, true);
 }
 
 function openItemModalFromTable(encodedAssetCode, mode) {
@@ -892,18 +1048,18 @@ async function saveItemRecord(mode) {
                 await updateInventoryStock(itemData.location_zone, itemData.description, 1, itemData.category_id, itemData.Image);
             }
             
-            alert('เพิ่มไอเทมใหม่สำเร็จ!');
+            showAppAlert('เพิ่มไอเทมใหม่สำเร็จ!', 'success');
         } else {
             const { error } = await _supabase.from('Item Master').update(itemData).eq('asset_code', assetCode);
             if (error) throw error;
-            alert('แก้ไขไอเทมสำเร็จ!');
+            showAppAlert('แก้ไขไอเทมสำเร็จ!', 'success');
         }
         closeModal('itemModal'); loadItemData();
-    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 async function deleteItemRecord(assetCode) {
-    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบไอเทม Asset Code: ${assetCode}?`)) return;
+    if (!await showAppConfirm(`คุณแน่ใจหรือไม่ว่าต้องการลบไอเทม Asset Code: ${assetCode}?`, { confirmText: 'ลบไอเทม' })) return;
     showLoading();
     try {
         // Fetch item details before deletion to update inventory
@@ -918,9 +1074,9 @@ async function deleteItemRecord(assetCode) {
             await updateInventoryStock(item.location_zone, item.description, -1, item.category_id);
         }
 
-        alert('ลบไอเทมสำเร็จ!');
+        showAppAlert('ลบไอเทมสำเร็จ!', 'success');
         loadItemData();
-    } catch (err) { alert('ลบไอเทมไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('ลบไอเทมไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 // --- Category Master View ---
@@ -1052,17 +1208,17 @@ async function saveCategoryItem(mode) {
     const id = document.getElementById('cat_id').value;
     const catData = { category_name: document.getElementById('cat_name').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
     try {
-        if (mode === 'add') { catData.id = id; catData.create_id = currentUser.id; catData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Category Master').insert([catData]); if (error) throw error; alert('เพิ่มหมวดหมู่ใหม่สำเร็จ!'); }
-        else { const { error } = await _supabase.from('Category Master').update(catData).eq('id', id); if (error) throw error; alert('แก้ไขหมวดหมู่สำเร็จ!'); }
+        if (mode === 'add') { catData.id = id; catData.create_id = currentUser.id; catData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Category Master').insert([catData]); if (error) throw error; showAppAlert('เพิ่มหมวดหมู่ใหม่สำเร็จ!', 'success'); }
+        else { const { error } = await _supabase.from('Category Master').update(catData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขหมวดหมู่สำเร็จ!', 'success'); }
         closeModal('categoryModal'); loadCategoryData();
-    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 async function deleteCategoryItem(id) {
-    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบหมวดหมู่ ID: ${id}?`)) return;
+    if (!await showAppConfirm(`คุณแน่ใจหรือไม่ว่าต้องการลบหมวดหมู่ ID: ${id}?`, { confirmText: 'ลบหมวดหมู่' })) return;
     showLoading();
-    try { const { error } = await _supabase.from('Category Master').delete().eq('id', id); if (error) throw error; alert('ลบหมวดหมู่สำเร็จ!'); loadCategoryData(); }
-    catch (err) { alert('ลบหมวดหมู่ไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    try { const { error } = await _supabase.from('Category Master').delete().eq('id', id); if (error) throw error; showAppAlert('ลบหมวดหมู่สำเร็จ!', 'success'); loadCategoryData(); }
+    catch (err) { showAppAlert('ลบหมวดหมู่ไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 // --- Transection Master View ---
@@ -1436,7 +1592,7 @@ async function saveTransactionRecord(mode) {
                     await updateInventoryStock(fromZone, row.description, -1, row.id_category);
                 }
             }
-            alert(`${mode === 'transfer' ? 'ย้ายของ' : 'เพิ่มรายการ'} สำเร็จ!`);
+            showAppAlert(`${mode === 'transfer' ? 'ย้ายของ' : 'เพิ่มรายการ'} สำเร็จ!`, 'success');
         } else {
             const oldItem = editingTransactionItem;
             const updateData = { ...commonData, id_category: document.getElementById('edit_itm_id_cat').value, category: document.getElementById('edit_itm_cat_name').value, asset_code: document.getElementById('edit_itm_asset').value, inventory_code: document.getElementById('edit_itm_inv').value, description: document.getElementById('edit_itm_desc').value };
@@ -1449,17 +1605,17 @@ async function saveTransactionRecord(mode) {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, false);
                 await updateInventoryStock(fromZone, updateData.description, -1, updateData.id_category);
             }
-            alert('แก้ไขรายการและปรับยอดเรียบร้อย!');
+            showAppAlert('แก้ไขรายการและปรับยอดเรียบร้อย!', 'success');
         }
         closeModal('transactionModal'); loadTransactionData();
-    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 async function deleteTransactionRecord(id) {
-    if (!confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) return;
+    if (!await showAppConfirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?', { confirmText: 'ลบรายการ' })) return;
     showLoading();
-    try { const { error } = await _supabase.from('Transection Inventory').delete().eq('id', id); if (error) throw error; alert('ลบรายการสำเร็จ!'); if (document.getElementById('transactionModal').style.display === 'flex') closeModal('transactionModal'); loadTransactionData(); }
-    catch (err) { alert('ลบข้อมูลไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    try { const { error } = await _supabase.from('Transection Inventory').delete().eq('id', id); if (error) throw error; showAppAlert('ลบรายการสำเร็จ!', 'success'); if (document.getElementById('transactionModal').style.display === 'flex') closeModal('transactionModal'); loadTransactionData(); }
+    catch (err) { showAppAlert('ลบข้อมูลไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 function renderUserView() {
@@ -1601,18 +1757,18 @@ async function saveUserItem(mode) {
     const id = document.getElementById('user_id_pk').value;
     const userData = { name: document.getElementById('user_name').value, user_id: document.getElementById('user_login_id').value, password: document.getElementById('user_password').value, rank: document.getElementById('user_rank').value, status: document.getElementById('user_status').value === 'true', remark: document.getElementById('user_remark').value, edit_name: currentUser.name, edit_at: new Date().toLocaleString('th-TH') };
     try {
-        if (mode === 'add') { userData.id = id; userData.create_name = currentUser.name; userData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('User Master').insert([userData]); if (error) throw error; alert('เพิ่มผู้ใช้ใหม่สำเร็จ!'); }
-        else { const { error } = await _supabase.from('User Master').update(userData).eq('id', id); if (error) throw error; alert('แก้ไขข้อมูลผู้ใช้สำเร็จ!'); }
+        if (mode === 'add') { userData.id = id; userData.create_name = currentUser.name; userData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('User Master').insert([userData]); if (error) throw error; showAppAlert('เพิ่มผู้ใช้ใหม่สำเร็จ!', 'success'); }
+        else { const { error } = await _supabase.from('User Master').update(userData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขข้อมูลผู้ใช้สำเร็จ!', 'success'); }
         closeModal('userModal'); loadUserData();
-    } catch (err) { alert('เกิดข้อผิดพลาด: ' + err.message); } finally { hideLoading(); }
+    } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 async function deleteUserItem(id) {
-    if (id === currentUser.id) { alert('ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้'); return; }
-    if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้ ID: ${id}?`)) return;
+    if (id === currentUser.id) { showAppAlert('ไม่สามารถลบบัญชีที่กำลังใช้งานอยู่ได้', 'warning'); return; }
+    if (!await showAppConfirm(`คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้ ID: ${id}?`, { confirmText: 'ลบผู้ใช้' })) return;
     showLoading();
-    try { const { error } = await _supabase.from('User Master').delete().eq('id', id); if (error) throw error; alert('ลบผู้ใช้สำเร็จ!'); loadUserData(); }
-    catch (err) { alert('ลบผู้ใช้ไม่สำเร็จ: ' + err.message); } finally { hideLoading(); }
+    try { const { error } = await _supabase.from('User Master').delete().eq('id', id); if (error) throw error; showAppAlert('ลบผู้ใช้สำเร็จ!', 'success'); loadUserData(); }
+    catch (err) { showAppAlert('ลบผู้ใช้ไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
 function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
@@ -2217,7 +2373,7 @@ async function exportTransactionsToExcel() {
         }
 
         if (allData.length === 0) {
-            alert('ไม่มีข้อมูลที่จะ Export');
+            showAppAlert('ไม่มีข้อมูลที่จะ Export', 'warning');
             return;
         }
 
@@ -2257,7 +2413,7 @@ async function exportTransactionsToExcel() {
 
     } catch (err) {
         console.error('Export Error:', err);
-        alert('เกิดข้อผิดพลาดในการ Export: ' + err.message);
+        showAppAlert('เกิดข้อผิดพลาดในการ Export: ' + err.message, 'error');
     } finally {
         hideLoading();
     }
