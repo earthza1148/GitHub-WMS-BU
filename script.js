@@ -997,7 +997,7 @@ function renderItemView() {
                         <th>${getFilterHeader('items', 'asset', 'Asset Code')}</th>
                         <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
                         <th>${getFilterHeader('items', 'desc', 'Description')}</th>
-                        <th>${getFilterHeader('items', 'use_life', 'Use Life')}</th>
+                        <th>${getFilterHeader('items', 'use_life', 'Use Life (year)')}</th>
                         <th>${getFilterHeader('items', 'acquis_value', 'Acquis Value')}</th>
                         <th>Image</th>
                         <th>${getFilterHeader('items', 'zone', 'Location Zone')}</th>
@@ -2040,6 +2040,16 @@ function getQtyColor(qty) {
     return '#e566e7'; // ชมพู/ม่วง
 }
 
+function getLocationZonePrefix(zone) {
+    const normalizedZone = String(zone || '').trim();
+    if (!normalizedZone) return 'Unknown';
+    return normalizedZone.slice(0, 2).toUpperCase();
+}
+
+function getItemCategoryId(row) {
+    return String(row?.category_id || '').trim() || 'Unknown';
+}
+
 async function renderDashboardView() {
     const mainContent = document.getElementById('mainContent');
     const cfg = layoutConfigs[currentLayout];
@@ -2100,7 +2110,7 @@ async function renderDashboardView() {
 
             <!-- Column 3: Category Summary Chart -->
             <div class="analytics-card">
-                <h3>📁 Category Summary</h3>
+                <h3>📁 Category ID Summary</h3>
                 <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
                 </div>
@@ -2170,7 +2180,7 @@ function initDashboardCharts(stats) {
         data: {
             labels: zoneLabels,
             datasets: [{
-                label: 'Items',
+                label: 'Location Zone Count',
                 data: zoneData,
                 backgroundColor: zoneLabels.map((_, i) => i % 2 === 0 ? '#3A2E5B' : '#E67E22'),
                 borderRadius: 10,
@@ -2189,7 +2199,7 @@ function initDashboardCharts(stats) {
         }
     });
 
-    // 3. Category Summary Chart (Bar)
+    // 3. Category ID Summary Chart from Item Master category_id (Bar)
     const catLabels = Object.keys(stats.categoryStats).sort((a,b) => stats.categoryStats[b] - stats.categoryStats[a]).slice(0, 10);
     const catData = catLabels.map(l => stats.categoryStats[l]);
 
@@ -2198,7 +2208,7 @@ function initDashboardCharts(stats) {
         data: {
             labels: catLabels,
             datasets: [{
-                label: 'Items',
+                label: 'Category ID Count',
                 data: catData,
                 backgroundColor: '#3a7bd5',
                 borderRadius: 8
@@ -2313,19 +2323,19 @@ async function fetchDashboardData() {
         if (transRes.error) throw transRes.error;
 
         const zones = {};
-        const prefixZones = {}; // Grouped by prefix (AA, BB, etc.)
-        const categoryStats = {}; // Total items per Category (from Item Master)
+        const prefixZones = {}; // Count Item Master rows by first 2 chars of Location Zone (AA, BB, etc.)
+        const categoryStats = {}; // Count Item Master rows by category_id.
         let totalQty = 0;
         let uniqueDescs = new Set();
 
         // Process Item Master: 1 row = 1 item/unit in a Location Zone.
         dashboardItemRows = itemRes.data || [];
         dashboardItemRows.forEach(row => {
-            const catId = row.category_id || 'N/A';
+            const catId = getItemCategoryId(row);
             categoryStats[catId] = (categoryStats[catId] || 0) + 1;
             
             const z = String(row.location_zone || '').trim() || 'Unknown';
-            const prefix = z.replace(/[0-9]/g, '').trim() || z;
+            const prefix = getLocationZonePrefix(z);
             const desc = row.description || 'No Description';
             const img = getItemImage(row) || null;
 
