@@ -748,12 +748,30 @@ function getItemImage(item) {
     return item.Image || item.image || '';
 }
 
+function getItemUseLife(item) {
+    if (!item) return '';
+    return item['Use Life'] ?? item.use_life ?? item.useLife ?? '';
+}
+
+function formatDisplayValue(value) {
+    return value === null || value === undefined || value === '' ? '-' : value;
+}
+
 function escapeAttribute(value) {
-    return String(value || '')
+    return String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/"/g, '&quot;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function renderImagePreviewHtml(url, altText = 'Image Preview') {
@@ -894,6 +912,7 @@ function renderItemView() {
                         <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
                         <th>${getFilterHeader('items', 'cat', 'Category ID')}</th>
                         <th>${getFilterHeader('items', 'desc', 'Description')}</th>
+                        <th>Use Life</th>
                         <th>Image</th>
                         <th>${getFilterHeader('items', 'zone', 'Location Zone')}</th>
                         <th>${getFilterHeader('items', 'status', 'Status')}</th>
@@ -918,7 +937,7 @@ async function loadItemData(page = 0) {
     const searchDescCat = document.getElementById('searchItemDescCat')?.value || '';
 
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
-    const colSpan = hasPermission ? 9 : 8;
+    const colSpan = hasPermission ? 10 : 9;
     tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
     try {
         let query = _supabase.from('Item Master').select('*', { count: 'exact' });
@@ -973,10 +992,11 @@ function renderItemTable(data, totalCount) {
             if (!isTextSelected()) openItemModal(item, 'view');
         };
         const imageUrl = getItemImage(item);
+        const useLife = getItemUseLife(item);
         const encodedAssetCode = encodeURIComponent(item.asset_code || '');
         const rowNumber = currentItemPage * ITEM_PAGE_SIZE + index + 1;
         tr.innerHTML = `
-            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
@@ -1005,6 +1025,7 @@ function openItemModal(item, mode) {
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
     const isEditMode = (mode === 'add' || mode === 'edit') && hasPermission;
     const imageValue = getItemImage(item);
+    const useLifeValue = getItemUseLife(item);
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
@@ -1016,6 +1037,7 @@ function openItemModal(item, mode) {
                     <div class="form-group"><label>Asset Code</label><input type="text" id="itm_asset" value="${item ? item.asset_code : ''}" ${mode !== 'add' ? 'disabled' : ''} required></div>
                     <div class="form-group"><label>Inventory Code</label><input type="text" id="itm_inv" value="${item ? (item.inventory_code || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Category ID</label><input type="text" id="itm_cat" value="${item ? (item.category_id || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
+                    <div class="form-group"><label>Use Life</label><input type="text" value="${escapeAttribute(useLifeValue)}" disabled></div>
                     <div class="form-group full-width"><label>Description</label><input type="text" id="itm_desc" value="${item ? (item.description || '') : ''}" ${!isEditMode ? 'disabled' : ''} required></div>
                     <div class="form-group full-width"><label>Image</label><div id="itemImagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(imageValue, 'Item Image')}</div><input type="hidden" id="itm_image" value="${escapeAttribute(imageValue)}">${isEditMode ? `<div class="image-upload-row"><input type="file" id="itm_image_upload" accept="image/*" onchange="handleItemImageUpload(this)"><button type="button" class="btn-clear-image" onclick="clearItemImage()">ล้างรูป</button></div>` : ''}</div>
                     <div class="form-group"><label>Location Zone</label><input type="text" id="itm_zone" value="${item ? (item.location_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
@@ -1474,6 +1496,7 @@ async function openTransactionModal(item, mode) {
                             <option value="กำลังยืม" ${item && item.status === 'กำลังยืม' ? 'selected' : ''}>กำลังยืม</option>
                             <option value="คืนของแล้ว" ${item && item.status === 'คืนของแล้ว' ? 'selected' : ''}>คืนของแล้ว</option>
                             <option value="จัดสรรอยู่" ${item && item.status === 'จัดสรรอยู่' ? 'selected' : ''}>จัดสรรอยู่</option>
+                            <option value="จอง" ${item && item.status === 'จอง' ? 'selected' : ''}>จอง</option>
                             <option value="ตัดจำหน่าย" ${item && item.status === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
                             <option value="ย้ายของ" ${(mode === 'transfer' || (item && item.status === 'ย้ายของ')) ? 'selected' : ''}>ย้ายของ</option>
                         </select>
@@ -1601,6 +1624,8 @@ async function saveTransactionRecord(mode) {
             if (status === 'คืนของแล้ว' && oldItem.status !== 'คืนของแล้ว') {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, true);
                 await updateInventoryStock(fromZone, updateData.description, 1, updateData.id_category);
+            } else if (status === 'จอง' && oldItem.status !== 'จอง') {
+                await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, false);
             } else if (status !== 'คืนของแล้ว' && oldItem.status === 'คืนของแล้ว') {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, false);
                 await updateInventoryStock(fromZone, updateData.description, -1, updateData.id_category);
@@ -1776,6 +1801,8 @@ function logout() { localStorage.removeItem('wms_user'); location.reload(); }
 
 // --- Dashboard View Implementation ---
 let dashboardData = {};
+let dashboardItemRows = [];
+let activePopupZoneName = '';
 let currentLayout = 'Indoor Floor 1';
 
 const layoutConfigs = {
@@ -2007,7 +2034,7 @@ function initDashboardCharts(stats) {
         data: {
             labels: zoneLabels,
             datasets: [{
-                label: 'Quantity',
+                label: 'Items',
                 data: zoneData,
                 backgroundColor: zoneLabels.map((_, i) => i % 2 === 0 ? '#3A2E5B' : '#E67E22'),
                 borderRadius: 10,
@@ -2112,17 +2139,16 @@ let dashboardStats = {};
 async function fetchDashboardData() {
     try {
         showLoading();
-        dashboardData = {}; 
+        dashboardData = {};
+        dashboardItemRows = [];
         
-        // Fetch all data in parallel
-        const [invRes, itemRes, catRes, transRes] = await Promise.all([
-            _supabase.from('Inventory Master').select('zone, descriprion, quantity, image, id_category'),
+        // Dashboard zone counts come from Item Master by Location Zone.
+        const [itemRes, catRes, transRes] = await Promise.all([
             _supabase.from('Item Master').select('*'),
             _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
             _supabase.from('Transection Inventory').select('status')
         ]);
 
-        if (invRes.error) throw invRes.error;
         if (itemRes.error) throw itemRes.error;
         if (catRes.error) throw catRes.error;
         if (transRes.error) throw transRes.error;
@@ -2133,37 +2159,29 @@ async function fetchDashboardData() {
         let totalQty = 0;
         let uniqueDescs = new Set();
 
-        // Process Item Master for Category Stats (1 record = 1 item)
-        itemRes.data.forEach(row => {
+        // Process Item Master: 1 row = 1 item/unit in a Location Zone.
+        dashboardItemRows = itemRes.data || [];
+        dashboardItemRows.forEach(row => {
             const catId = row.category_id || 'N/A';
             categoryStats[catId] = (categoryStats[catId] || 0) + 1;
             
-            const z = row.location_zone || 'Unknown';
+            const z = String(row.location_zone || '').trim() || 'Unknown';
+            const prefix = z.replace(/[0-9]/g, '').trim() || z;
             const desc = row.description || 'No Description';
             const img = getItemImage(row) || null;
-            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
-            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img };
-            if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
-            uniqueDescs.add(desc);
-        });
 
-        // Process Inventory Master for Zone Totals
-        invRes.data.forEach(row => {
-            const z = row.zone || 'Unknown';
-            const prefix = z.replace(/[0-9]/g, '').trim() || z;
-            const qty = row.quantity || 0;
-            const desc = row.descriprion || 'No Description';
-            const img = row.image || null;
-
-            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {} };
-            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img };
+            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {}, items: [] };
+            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img, items: [] };
             
-            zones[z].totalQty += qty;
-            zones[z].descriptions[desc].qty += qty;
+            zones[z].totalQty += 1;
+            zones[z].items.push(row);
+            zones[z].descriptions[desc].qty += 1;
+            zones[z].descriptions[desc].items.push(row);
             if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
 
-            prefixZones[prefix] = (prefixZones[prefix] || 0) + qty;
-            totalQty += qty;
+            prefixZones[prefix] = (prefixZones[prefix] || 0) + 1;
+            totalQty += 1;
+            uniqueDescs.add(desc);
         });
 
         // Global Stats
@@ -2194,7 +2212,9 @@ async function fetchDashboardData() {
 function openZonePopup(zoneName) {
     const popup = document.getElementById('sidePopup');
     const overlay = document.getElementById('popupOverlay');
-    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {} };
+    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {}, items: [] };
+    const items = zoneInfo.items || [];
+    activePopupZoneName = zoneName;
 
     document.getElementById('popupZoneName').innerText = zoneName;
     
@@ -2207,13 +2227,13 @@ function openZonePopup(zoneName) {
         
         <div class="search-group" style="margin-bottom: 25px;">
             <input type="text" id="popupSearch" class="search-input" style="width:100%; padding: 0.8rem 1.2rem; border-radius: 15px;" 
-                   placeholder="🔍 ค้นหา Description..." oninput="filterPopupItems('${zoneName}')">
+                   placeholder="ค้นหา Asset / Inventory / Description..." oninput="filterPopupItems()">
         </div>
 
         <h4 style="margin-bottom: 20px; color: var(--bu-purple); display: flex; justify-content: space-between; align-items: center;">
             รายการสิ่งของ
             <span style="font-size: 0.8rem; background: #f0f3ff; color: #3a7bd5; padding: 4px 10px; border-radius: 8px;" id="popupMatchCount">
-                ${Object.keys(zoneInfo.descriptions).length} รายการ
+                ${items.length.toLocaleString()} รายการ
             </span>
         </h4>
         
@@ -2227,112 +2247,106 @@ function openZonePopup(zoneName) {
 }
 
 function renderPopupItemList(zoneName, filter = '') {
-    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {} };
-    const descriptions = Object.keys(zoneInfo.descriptions).filter(desc => 
-        desc.toLowerCase().includes(filter.toLowerCase())
-    );
+    const zoneInfo = dashboardData[zoneName] || { totalQty: 0, descriptions: {}, items: [] };
+    const items = (zoneInfo.items || [])
+        .filter(item => dashboardItemMatchesFilter(item, filter))
+        .sort((a, b) => String(a.asset_code || '').localeCompare(String(b.asset_code || ''), undefined, { numeric: true, sensitivity: 'base' }));
 
-    if (descriptions.length === 0) {
+    if (items.length === 0) {
         return `<p style="color: var(--text-muted); text-align: center; padding: 20px;">ไม่พบรายการที่ตรงกับเงื่อนไข</p>`;
     }
 
-    return descriptions.map(desc => {
-        const item = zoneInfo.descriptions[desc];
+    return items.map(item => {
+        const imageUrl = getItemImage(item);
+        const useLife = getItemUseLife(item);
+        const assetCode = item.asset_code || '';
+        const encodedAssetCode = escapeAttribute(encodeURIComponent(assetCode).replace(/'/g, '%27'));
+        const statusText = item.active ? 'Active' : 'Inactive';
+        const statusClass = item.active ? 'status-active' : 'status-inactive';
+        const clickAttr = assetCode ? ` onclick="openDashboardItemFromPopup('${encodedAssetCode}')"` : '';
+        const clickableClass = assetCode ? ' is-clickable' : '';
+
         return `
-            <div class="popup-item-card" style="display: flex; gap: 15px; align-items: center; cursor: pointer; transition: transform 0.2s;" 
-                 onclick="showItemDetailsInZone('${zoneName}', '${desc.replace(/'/g, "\\'")}')"
-                 onmouseover="this.style.transform='translateX(5px)'" 
-                 onmouseout="this.style.transform='translateX(0)'">
-                ${item.image ? `<img src="${item.image}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 10px; border: 1px solid #eee;">` : `<div style="width: 60px; height: 60px; background: #f8f9fa; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #ccc; border: 1px solid #eee;">🖼️</div>`}
-                <div style="flex: 1;">
-                    <span class="item-desc" style="margin-bottom: 5px; display: block; font-weight: 700; color: var(--bu-purple);">${desc}</span>
-                    <div class="item-meta">
-                        <span>ยอดรวมใน Zone</span>
-                        <span class="item-qty" style="font-weight: 800; color: var(--bu-orange);">${item.qty.toLocaleString()}</span>
+            <div class="popup-item-card dashboard-zone-item${clickableClass}"${clickAttr}>
+                <div class="dashboard-zone-item-thumb">
+                    ${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(item.description || 'Item')}">` : `<span>No image</span>`}
+                </div>
+                <div class="dashboard-zone-item-body">
+                    <div class="dashboard-zone-item-title-row">
+                        <span class="dashboard-zone-item-title">${escapeHtml(formatDisplayValue(item.description))}</span>
+                        <span class="status-badge ${statusClass}">${statusText}</span>
+                    </div>
+                    <div class="dashboard-zone-item-code">${escapeHtml(formatDisplayValue(assetCode))}</div>
+                    <div class="dashboard-zone-item-grid">
+                        ${renderDashboardItemMeta('Inventory', item.inventory_code)}
+                        ${renderDashboardItemMeta('Category', item.category_id)}
+                        ${renderDashboardItemMeta('Use Life', useLife)}
                     </div>
                 </div>
-                <div style="color: #ccc; font-size: 1.2rem;">›</div>
             </div>
         `;
     }).join('');
 }
 
-async function showItemDetailsInZone(zoneName, description) {
+function dashboardItemMatchesFilter(item, filter = '') {
+    const query = String(filter || '').trim().toLowerCase();
+    if (!query) return true;
+
+    return [
+        item.asset_code,
+        item.inventory_code,
+        item.category_id,
+        item.description,
+        item.location_zone,
+        getItemUseLife(item),
+        item.active ? 'active' : 'inactive'
+    ].some(value => String(value ?? '').toLowerCase().includes(query));
+}
+
+function renderDashboardItemMeta(label, value) {
+    return `
+        <div class="dashboard-zone-item-meta">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(formatDisplayValue(value))}</strong>
+        </div>
+    `;
+}
+
+async function openDashboardItemFromPopup(encodedAssetCode) {
+    const assetCode = decodeURIComponent(encodedAssetCode || '');
+    if (!assetCode) return;
+
+    const cachedItem = dashboardItemRows.find(item => item.asset_code === assetCode);
+    if (cachedItem) {
+        closeZonePopup();
+        openItemModal(cachedItem, 'view');
+        return;
+    }
+
     showLoading();
     try {
-        // ดึงข้อมูลดิบจากทั้ง 2 ตารางที่ระบุ Zone และ Description นี้
-        const [invRes, itemRes] = await Promise.all([
-            _supabase.from('Inventory Master').select('*').eq('zone', zoneName).eq('descriprion', description),
-            _supabase.from('Item Master').select('*').eq('location_zone', zoneName).eq('description', description)
-        ]);
-
-        const popupContent = document.getElementById('popupContent');
-        const backBtn = `<button onclick="openZonePopup('${zoneName}')" style="background: none; border: none; color: var(--bu-purple); cursor: pointer; font-weight: 700; margin-bottom: 20px; display: flex; align-items: center; gap: 5px;">← กลับไปหน้ารวม Zone</button>`;
-        
-        let html = `${backBtn}
-            <h4 style="color: var(--bu-purple); margin-bottom: 15px;">รายละเอียด: ${description}</h4>
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 15px; margin-bottom: 20px;">
-                <p style="font-size: 0.9rem; color: #666; margin-bottom: 5px;">Zone: <strong>${zoneName}</strong></p>
-            </div>
-        `;
-
-        if (itemRes.data && itemRes.data.length > 0) {
-            html += `<h5 style="margin-bottom: 10px;">Item Master Records (${itemRes.data.length})</h5>
-                <div class="popup-item-list" style="margin-bottom: 25px;">
-                    ${itemRes.data.map(item => `
-                        <div class="popup-item-card" style="padding: 12px; font-size: 0.85rem;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span style="color: #666;">Asset Code:</span>
-                                <strong style="color: var(--bu-purple);">${item.asset_code}</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between;">
-                                <span style="color: #666;">Inventory Code:</span>
-                                <strong>${item.inventory_code || '-'}</strong>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>`;
-        }
-
-        if (invRes.data && invRes.data.length > 0) {
-            html += `<h5 style="margin-bottom: 10px;">Inventory Records (${invRes.data.length})</h5>
-                <div class="popup-item-list">
-                    ${invRes.data.map(item => `
-                        <div class="popup-item-card" style="padding: 12px; font-size: 0.85rem;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                                <span style="color: #666;">ID:</span>
-                                <strong>${item.id}</strong>
-                            </div>
-                            <div style="display: flex; justify-content: space-between;">
-                                <span style="color: #666;">Quantity:</span>
-                                <strong style="color: var(--bu-orange); font-size: 1rem;">${item.quantity}</strong>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>`;
-        }
-
-        popupContent.innerHTML = html;
+        const { data, error } = await _supabase.from('Item Master').select('*').eq('asset_code', assetCode).single();
+        if (error) throw error;
+        closeZonePopup();
+        openItemModal(data, 'view');
     } catch (err) {
-        console.error('Error fetching item details:', err);
+        console.error('Error opening item from dashboard:', err);
     } finally {
         hideLoading();
     }
 }
 
-function filterPopupItems(zoneName) {
+function filterPopupItems() {
     const query = document.getElementById('popupSearch').value;
     const listContainer = document.getElementById('popupItemList');
     const matchCount = document.getElementById('popupMatchCount');
     
-    if (listContainer) listContainer.innerHTML = renderPopupItemList(zoneName, query);
+    if (listContainer) listContainer.innerHTML = renderPopupItemList(activePopupZoneName, query);
     
     // อัปเดตตัวเลขจำนวนที่ค้นเจอ
-    const zoneInfo = dashboardData[zoneName] || { descriptions: {} };
-    const count = Object.keys(zoneInfo.descriptions).filter(desc => 
-        desc.toLowerCase().includes(query.toLowerCase())
-    ).length;
-    if (matchCount) matchCount.innerText = `${count} รายการ`;
+    const zoneInfo = dashboardData[activePopupZoneName] || { items: [] };
+    const count = (zoneInfo.items || []).filter(item => dashboardItemMatchesFilter(item, query)).length;
+    if (matchCount) matchCount.innerText = `${count.toLocaleString()} รายการ`;
 }
 
 function closeZonePopup() {
