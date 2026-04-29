@@ -631,6 +631,14 @@ nav {
     background: rgba(58, 46, 91, 0.1);
 }
 
+.sort-indicator {
+    display: inline-block;
+    margin-left: 6px;
+    color: var(--bu-purple);
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
 .filter-dropdown {
     position: fixed; /* Changed to fixed to break out of table-wrapper clipping */
     z-index: 9999;
@@ -656,6 +664,36 @@ nav {
 
 .filter-dropdown.show {
     display: flex;
+}
+
+.filter-sort-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #edf2f7;
+}
+
+.filter-sort-actions button {
+    border: 1px solid #e1e8ef;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: var(--bu-purple);
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 800;
+    padding: 9px 8px;
+    transition: all 0.2s;
+}
+
+.filter-sort-actions button:hover {
+    background: rgba(58, 46, 91, 0.08);
+    border-color: rgba(58, 46, 91, 0.2);
+}
+
+.filter-sort-actions button:last-child {
+    grid-column: 1 / -1;
+    color: #667085;
 }
 
 .filter-search {

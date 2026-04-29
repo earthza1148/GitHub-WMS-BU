@@ -15,7 +15,7 @@ let userMasterData = [];
 let categoryData = [];
 let itemMasterData = [];
 let transactionData = [];
-let currentView = 'inventory';
+let currentView = 'items';
 let editingTransactionItem = null;
 
 // --- Pagination Settings ---
@@ -36,6 +36,29 @@ let activeFilters = {
     transactions: {},
     users: {}
 };
+
+let activeSort = {
+    items: { column: null, direction: 'asc' }
+};
+
+function getSortIndicator(view, column) {
+    const sort = activeSort[view];
+    if (!sort || sort.column !== column) return '';
+    return `<span class="sort-indicator">${sort.direction === 'asc' ? '▲' : '▼'}</span>`;
+}
+
+function setSort(view, column, direction) {
+    if (!activeSort[view]) activeSort[view] = {};
+    activeSort[view] = { column, direction };
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+    if (view === 'items') renderItemView();
+}
+
+function clearSort(view, column) {
+    if (activeSort[view]?.column === column) activeSort[view] = { column: null, direction: 'asc' };
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+    if (view === 'items') renderItemView();
+}
 
 // Function to toggle filter dropdown
 function toggleFilterDropdown(event, view, column) {
@@ -120,10 +143,11 @@ async function populateFilterOptions(view, column) {
     optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #666;">กำลังโหลด...</div>';
 
     try {
-        const data = await fetchAllFilterColumnValues(tableName, dbColumn);
+        const data = await fetchAllFilterColumnValues(view, column, tableName, dbColumn);
 
         // Get unique values and remove nulls
-        let uniqueValues = [...new Set(data.map(item => String(item[dbColumn] === null ? '(ว่าง)' : item[dbColumn])))];
+        let uniqueValues = [...new Set(data.map(item => getNormalizedFilterValue(getFilterRowValue(view, column, item))))];
+        uniqueValues.sort(compareNormalizedFilterValues);
         
         const renderOptions = (filterText = '') => {
             const filtered = uniqueValues.filter(v => v.toLowerCase().includes(filterText.toLowerCase()));
@@ -148,16 +172,74 @@ async function populateFilterOptions(view, column) {
     }
 }
 
-async function fetchAllFilterColumnValues(tableName, dbColumn) {
+function isClientSideItemFilterColumn(column) {
+    return column === 'use_life' || column === 'acquis_value';
+}
+
+function getFilterRowValue(view, column, row) {
+    if (view === 'items' && column === 'use_life') return getItemUseLife(row);
+    if (view === 'items' && column === 'acquis_value') return getItemAcquisValue(row);
+    const dbColumn = getDbColumnFromViewColumn(view, column);
+    return row ? row[dbColumn] : null;
+}
+
+function getNormalizedFilterValue(value) {
+    return value === null || value === undefined || value === '' ? '(ว่าง)' : String(value);
+}
+
+function getComparableNumber(value) {
+    if (value === null || value === undefined || value === '' || value === '(ว่าง)') return null;
+    const numberValue = Number(String(value).replace(/,/g, '').trim());
+    return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function compareNormalizedFilterValues(a, b) {
+    if (a === '(ว่าง)' && b !== '(ว่าง)') return 1;
+    if (a !== '(ว่าง)' && b === '(ว่าง)') return -1;
+
+    const aNum = getComparableNumber(a);
+    const bNum = getComparableNumber(b);
+    if (aNum !== null && bNum !== null) return aNum - bNum;
+
+    return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function itemPassesClientSideFilters(item, columns) {
+    return columns.every(column => {
+        const selected = activeFilters.items[column] || [];
+        if (selected.length === 0) return true;
+        return selected.includes(getNormalizedFilterValue(getFilterRowValue('items', column, item)));
+    });
+}
+
+function compareItemRowsByColumn(column, direction) {
+    return (a, b) => {
+        const aValue = getFilterRowValue('items', column, a);
+        const bValue = getFilterRowValue('items', column, b);
+        const aNormalized = getNormalizedFilterValue(aValue);
+        const bNormalized = getNormalizedFilterValue(bValue);
+        if (aNormalized === '(ว่าง)' && bNormalized !== '(ว่าง)') return 1;
+        if (aNormalized !== '(ว่าง)' && bNormalized === '(ว่าง)') return -1;
+        const baseResult = compareNormalizedFilterValues(aNormalized, bNormalized);
+        return direction === 'desc' ? -baseResult : baseResult;
+    };
+}
+
+async function fetchAllFilterColumnValues(view, column, tableName, dbColumn) {
     let allRows = [];
     let from = 0;
+    const useFullRow = view === 'items' && isClientSideItemFilterColumn(column);
 
     while (true) {
-        const { data, error } = await _supabase
+        let query = _supabase
             .from(tableName)
-            .select(dbColumn)
-            .order(dbColumn, { ascending: true })
-            .range(from, from + FILTER_FETCH_SIZE - 1);
+            .select(useFullRow ? '*' : dbColumn);
+
+        query = useFullRow
+            ? query.order('asset_code', { ascending: true })
+            : query.order(dbColumn, { ascending: true });
+
+        const { data, error } = await query.range(from, from + FILTER_FETCH_SIZE - 1);
 
         if (error) throw error;
         allRows = allRows.concat(data || []);
@@ -229,7 +311,7 @@ function getTableNameFromView(view) {
 function getDbColumnFromViewColumn(view, column) {
     const maps = {
         inventory: { id: 'id', zone: 'zone', desc: 'descriprion', status: 'active', remark: 'remark' },
-        items: { asset: 'asset_code', inv: 'inventory_code', cat: 'category_id', desc: 'description', zone: 'location_zone', status: 'active' },
+        items: { asset: 'asset_code', inv: 'inventory_code', cat: 'category_id', desc: 'description', use_life: 'Use Life', acquis_value: 'Acquis Value', zone: 'location_zone', status: 'active' },
         category: { id: 'id', name: 'category_name' },
         transactions: { id: 'id', code: 'code', cat_id: 'id_category', asset: 'asset_code', inv: 'inventory_code', desc: 'description', type: 'movement_type', loc: 'to_location', status: 'status' },
         users: { id: 'id', name: 'name', login: 'user_id', rank: 'rank', status: 'status' }
@@ -522,9 +604,8 @@ function showDashboard(user) {
             <p>Bangkok University</p>
         </div>
         <nav>
-            <div class="nav-item ${currentView === 'inventory' ? 'active' : ''}" onclick="switchView('inventory')"><img src="รูป/Inventory Icon.png" class="nav-icon"> Inventory Master</div>
+            <div class="nav-item ${currentView === 'items' ? 'active' : ''}" onclick="switchView('items')"><img src="รูป/Item Icon.png" class="nav-icon"> Item Master</div>
             <div class="nav-item ${currentView === 'category' ? 'active' : ''}" onclick="switchView('category')"><img src="รูป/Category Icon.png" class="nav-icon"> Category Master</div>
-            ${(user.rank === 'Master' || user.rank === 'Admin') ? `<div class="nav-item ${currentView === 'items' ? 'active' : ''}" onclick="switchView('items')"><img src="รูป/Item Icon.png" class="nav-icon"> Item Master</div>` : ''}
             <div class="nav-item ${currentView === 'transactions' ? 'active' : ''}" onclick="switchView('transactions')"><img src="รูป/Transaction Icon.png" class="nav-icon"> Transaction Master</div>
             ${user.rank === 'Master' ? `<div class="nav-item ${currentView === 'users' ? 'active' : ''}" onclick="switchView('users')"><img src="รูป/User Icon.png" class="nav-icon"> User Master</div>` : ''}
             <div class="nav-item ${currentView === 'dashboard' ? 'active' : ''}" onclick="switchView('dashboard')"><img src="รูป/Dashboard Icon.png" class="nav-icon"> Dashboard</div>
@@ -540,7 +621,7 @@ function showDashboard(user) {
     <!-- 4. เนื้อหาหลัก (Dashboard) -->
     <div class="dashboard-container">
         <div class="dashboard-header">
-            <h2 id="viewTitle"><img src="รูป/Inventory Icon.png" class="view-icon"> Inventory Master</h2>
+            <h2 id="viewTitle"><img src="รูป/Item Icon.png" class="view-icon"> Item Master</h2>
             <div class="user-info-brief">
                 <strong>คุณ ${user.name}</strong>
                 <span>สิทธิ์: ${user.rank}</span>
@@ -753,6 +834,11 @@ function getItemUseLife(item) {
     return item['Use Life'] ?? item.use_life ?? item.useLife ?? '';
 }
 
+function getItemAcquisValue(item) {
+    if (!item) return '';
+    return item['Acquis Value'] ?? item.acquis_value ?? item.acquisValue ?? '';
+}
+
 function formatDisplayValue(value) {
     return value === null || value === undefined || value === '' ? '-' : value;
 }
@@ -910,9 +996,9 @@ function renderItemView() {
                         <th>No.</th>
                         <th>${getFilterHeader('items', 'asset', 'Asset Code')}</th>
                         <th>${getFilterHeader('items', 'inv', 'Inventory Code')}</th>
-                        <th>${getFilterHeader('items', 'cat', 'Category ID')}</th>
                         <th>${getFilterHeader('items', 'desc', 'Description')}</th>
-                        <th>Use Life</th>
+                        <th>${getFilterHeader('items', 'use_life', 'Use Life')}</th>
+                        <th>${getFilterHeader('items', 'acquis_value', 'Acquis Value')}</th>
                         <th>Image</th>
                         <th>${getFilterHeader('items', 'zone', 'Location Zone')}</th>
                         <th>${getFilterHeader('items', 'status', 'Status')}</th>
@@ -940,20 +1026,27 @@ async function loadItemData(page = 0) {
     const colSpan = hasPermission ? 10 : 9;
     tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
     try {
-        let query = _supabase.from('Item Master').select('*', { count: 'exact' });
-        
-        // Apply Global Search
-        if (searchCode) {
-            query = query.or(`asset_code.ilike.%${searchCode}%,inventory_code.ilike.%${searchCode}%`);
-        }
-        if (searchDescCat) {
-            query = query.or(`description.ilike.%${searchDescCat}%,category_id.ilike.%${searchDescCat}%`);
-        }
+        const itemSort = activeSort.items || {};
+        const clientSideFilterColumns = Object.keys(activeFilters.items).filter(col =>
+            isClientSideItemFilterColumn(col) && activeFilters.items[col]?.length > 0
+        );
+        const needsClientSideSort = itemSort.column && isClientSideItemFilterColumn(itemSort.column);
+        const needsClientSideProcessing = clientSideFilterColumns.length > 0 || needsClientSideSort;
 
-        // Apply Excel-style filters
-        for (const col in activeFilters.items) {
-            const vals = activeFilters.items[col];
-            if (vals && vals.length > 0) {
+        const applyItemBaseFilters = (baseQuery) => {
+            let query = baseQuery;
+
+            if (searchCode) {
+                query = query.or(`asset_code.ilike.%${searchCode}%,inventory_code.ilike.%${searchCode}%`);
+            }
+            if (searchDescCat) {
+                query = query.or(`description.ilike.%${searchDescCat}%,category_id.ilike.%${searchDescCat}%`);
+            }
+
+            for (const col in activeFilters.items) {
+                const vals = activeFilters.items[col];
+                if (isClientSideItemFilterColumn(col) || !vals || vals.length === 0) continue;
+
                 const dbCol = getDbColumnFromViewColumn('items', col);
                 if (col === 'status') {
                     const mappedVals = vals.map(v => v === 'true');
@@ -968,10 +1061,42 @@ async function loadItemData(page = 0) {
                     }
                 }
             }
+
+            return query;
+        };
+
+        if (needsClientSideProcessing) {
+            let allData = [];
+            let from = 0;
+
+            while (true) {
+                const { data, error } = await applyItemBaseFilters(_supabase.from('Item Master').select('*'))
+                    .order('asset_code', { ascending: true })
+                    .range(from, from + FILTER_FETCH_SIZE - 1);
+
+                if (error) throw error;
+                allData = allData.concat(data || []);
+                if (!data || data.length < FILTER_FETCH_SIZE) break;
+                from += FILTER_FETCH_SIZE;
+            }
+
+            const filteredData = allData.filter(item => itemPassesClientSideFilters(item, clientSideFilterColumns));
+            if (needsClientSideSort) {
+                filteredData.sort(compareItemRowsByColumn(itemSort.column, itemSort.direction));
+            }
+            const pageStart = page * ITEM_PAGE_SIZE;
+            const pageData = filteredData.slice(pageStart, pageStart + ITEM_PAGE_SIZE);
+            itemMasterData = pageData;
+            renderItemTable(pageData, filteredData.length);
+            return;
         }
 
+        let query = applyItemBaseFilters(_supabase.from('Item Master').select('*', { count: 'exact' }));
+        const dbSortColumn = itemSort.column ? getDbColumnFromViewColumn('items', itemSort.column) : 'asset_code';
+        const sortAscending = itemSort.direction !== 'desc';
+
         const { data, error, count } = await query
-            .order('asset_code', { ascending: true })
+            .order(dbSortColumn, { ascending: sortAscending })
             .range(page * ITEM_PAGE_SIZE, (page + 1) * ITEM_PAGE_SIZE - 1);
 
         if (error) throw error;
@@ -993,10 +1118,11 @@ function renderItemTable(data, totalCount) {
         };
         const imageUrl = getItemImage(item);
         const useLife = getItemUseLife(item);
+        const acquisValue = getItemAcquisValue(item);
         const encodedAssetCode = encodeURIComponent(item.asset_code || '');
         const rowNumber = currentItemPage * ITEM_PAGE_SIZE + index + 1;
         tr.innerHTML = `
-            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.category_id || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${formatDisplayValue(acquisValue)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
@@ -1026,6 +1152,7 @@ function openItemModal(item, mode) {
     const isEditMode = (mode === 'add' || mode === 'edit') && hasPermission;
     const imageValue = getItemImage(item);
     const useLifeValue = getItemUseLife(item);
+    const acquisValue = getItemAcquisValue(item);
     modal.innerHTML = `
         <div class="modal-content">
             <div class="modal-header">
@@ -1038,6 +1165,7 @@ function openItemModal(item, mode) {
                     <div class="form-group"><label>Inventory Code</label><input type="text" id="itm_inv" value="${item ? (item.inventory_code || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Category ID</label><input type="text" id="itm_cat" value="${item ? (item.category_id || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
                     <div class="form-group"><label>Use Life</label><input type="text" value="${escapeAttribute(useLifeValue)}" disabled></div>
+                    <div class="form-group"><label>Acquis Value</label><input type="text" value="${escapeAttribute(acquisValue)}" disabled></div>
                     <div class="form-group full-width"><label>Description</label><input type="text" id="itm_desc" value="${item ? (item.description || '') : ''}" ${!isEditMode ? 'disabled' : ''} required></div>
                     <div class="form-group full-width"><label>Image</label><div id="itemImagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(imageValue, 'Item Image')}</div><input type="hidden" id="itm_image" value="${escapeAttribute(imageValue)}">${isEditMode ? `<div class="image-upload-row"><input type="file" id="itm_image_upload" accept="image/*" onchange="handleItemImageUpload(this)"><button type="button" class="btn-clear-image" onclick="clearItemImage()">ล้างรูป</button></div>` : ''}</div>
                     <div class="form-group"><label>Location Zone</label><input type="text" id="itm_zone" value="${item ? (item.location_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
@@ -1245,11 +1373,19 @@ async function deleteCategoryItem(id) {
 
 // --- Transection Master View ---
 function getFilterHeader(view, column, label) {
+    const canSort = view === 'items' && (column === 'use_life' || column === 'acquis_value');
     return `
         <div class="filter-header">
-            <span>${label}</span>
+            <span>${label}${getSortIndicator(view, column)}</span>
             <button id="filter-btn-${view}-${column}" class="filter-btn" onclick="toggleFilterDropdown(event, '${view}', '${column}')">▼</button>
             <div id="filter-dropdown-${view}-${column}" class="filter-dropdown" onclick="event.stopPropagation()">
+                ${canSort ? `
+                <div class="filter-sort-actions">
+                    <button type="button" onclick="setSort('${view}', '${column}', 'asc')">เรียงจากน้อยไปมาก</button>
+                    <button type="button" onclick="setSort('${view}', '${column}', 'desc')">เรียงจากมากไปน้อย</button>
+                    <button type="button" onclick="clearSort('${view}', '${column}')">ล้างการเรียง</button>
+                </div>
+                ` : ''}
                 <input type="text" class="filter-search" placeholder="Search...">
                 <div style="margin: 5px 0; display: flex; gap: 10px;">
                     <a href="javascript:void(0)" onclick="selectAllFilters('${view}', '${column}', true)" style="font-size: 0.7rem;">Select All</a>
@@ -2136,6 +2272,29 @@ async function changeLayout(layoutKey) {
 
 let dashboardStats = {};
 
+async function fetchAllDashboardItemRows() {
+    let allRows = [];
+    let from = 0;
+    let exactCount = 0;
+
+    while (true) {
+        const { data, error, count } = await _supabase
+            .from('Item Master')
+            .select('*', { count: 'exact' })
+            .order('asset_code', { ascending: true })
+            .range(from, from + FILTER_FETCH_SIZE - 1);
+
+        if (error) throw error;
+        if (typeof count === 'number') exactCount = count;
+
+        allRows = allRows.concat(data || []);
+        if (!data || data.length < FILTER_FETCH_SIZE) break;
+        from += FILTER_FETCH_SIZE;
+    }
+
+    return { data: allRows, count: exactCount || allRows.length };
+}
+
 async function fetchDashboardData() {
     try {
         showLoading();
@@ -2144,7 +2303,7 @@ async function fetchDashboardData() {
         
         // Dashboard zone counts come from Item Master by Location Zone.
         const [itemRes, catRes, transRes] = await Promise.all([
-            _supabase.from('Item Master').select('*'),
+            fetchAllDashboardItemRows(),
             _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
             _supabase.from('Transection Inventory').select('status')
         ]);
@@ -2193,7 +2352,7 @@ async function fetchDashboardData() {
 
         dashboardStats = {
             totalZones: Object.keys(zones).length,
-            totalQty: totalQty,
+            totalQty: itemRes.count ?? totalQty,
             totalItems: uniqueDescs.size,
             totalCategories: catRes.count || 0,
             statusCounts: statusCounts,
