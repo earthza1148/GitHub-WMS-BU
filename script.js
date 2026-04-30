@@ -173,12 +173,28 @@ async function populateFilterOptions(view, column) {
 }
 
 function isClientSideItemFilterColumn(column) {
-    return column === 'use_life' || column === 'acquis_value';
+    return column === 'use_life' || column === 'acquis_value' || column === 'status';
+}
+
+function isActiveValue(value) {
+    const normalizedValue = String(value ?? '').trim().toLowerCase();
+    if (value === true || normalizedValue === 'true' || normalizedValue === 'active' || normalizedValue === '1') return true;
+    if (value === false || normalizedValue === 'false' || normalizedValue === 'inactive' || normalizedValue === '0') return false;
+    return Boolean(value);
+}
+
+function getActiveStatusLabel(value) {
+    return isActiveValue(value) ? 'Active' : 'Inactive';
+}
+
+function getActiveStatusClass(value) {
+    return isActiveValue(value) ? 'status-active' : 'status-inactive';
 }
 
 function getFilterRowValue(view, column, row) {
     if (view === 'items' && column === 'use_life') return getItemUseLife(row);
     if (view === 'items' && column === 'acquis_value') return getItemAcquisValue(row);
+    if (view === 'items' && column === 'status') return getActiveStatusLabel(row?.active);
     const dbColumn = getDbColumnFromViewColumn(view, column);
     return row ? row[dbColumn] : null;
 }
@@ -806,7 +822,7 @@ function renderInventoryTable(data, totalCount) {
         tr.innerHTML = `
             <td>${item.id}</td><td>${item.zone || '-'}</td><td>${item.descriprion || '-'}</td><td>${item.quantity || 0}</td>
             <td>${item.image ? `<img src="${item.image}" alt="Inventory" style="width: 50px; height: 50px; object-fit: cover; border-radius: 8px;">` : '-'}</td>
-            <td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            <td><span class="status-badge ${getActiveStatusClass(item.active)}">${getActiveStatusLabel(item.active)}</span></td>
             <td>${item.remark || '-'}</td>
             <td onclick="event.stopPropagation()"><div class="action-icons">${hasPermission ? `<button class="icon-btn edit-icon" onclick="openInventoryModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteInventoryItem('${item.id}')">🗑</button>` : '-'}</div></td>
         `;
@@ -944,7 +960,7 @@ function openInventoryModal(item, mode) {
                     <div class="form-group"><label>Category ID</label><input type="text" id="inv_category" value="${item ? (item.id_category || '') : ''}" ${mode === 'view' ? 'disabled' : ''}></div>
                     <div class="form-group full-width"><label>Description</label><input type="text" id="inv_description" value="${item ? (item.descriprion || '') : ''}" ${mode === 'view' ? 'disabled' : ''} required></div>
                     <div class="form-group"><label>Quantity</label><input type="number" id="inv_quantity" value="${item ? (item.quantity || 0) : 0}" ${mode === 'view' ? 'disabled' : ''}></div>
-                    <div class="form-group"><label>Status</label><select id="inv_active" ${mode === 'view' ? 'disabled' : ''}><option value="true" ${item && item.active ? 'selected' : ''}>Active</option><option value="false" ${item && !item.active ? 'selected' : ''}>Inactive</option></select></div>
+                    <div class="form-group"><label>Status</label><select id="inv_active" ${mode === 'view' ? 'disabled' : ''}><option value="true" ${item && isActiveValue(item.active) ? 'selected' : ''}>Active</option><option value="false" ${item && !isActiveValue(item.active) ? 'selected' : ''}>Inactive</option></select></div>
                     <div class="form-group full-width"><label>Image URL</label><input type="text" id="inv_image" value="${item ? (item.image || '') : ''}" ${mode === 'view' ? 'disabled' : ''} placeholder="https://example.com/image.jpg" oninput="updateImagePreview(this.value)"></div>
                     <div class="form-group full-width"><label>Remark</label><textarea id="inv_remark" rows="2" ${mode === 'view' ? 'disabled' : ''}>${item ? (item.remark || '') : ''}</textarea></div>
                     <div class="form-group"><label>Owner</label><input type="text" id="inv_owner" value="${item ? (item.owner || '') : ''}" ${mode === 'view' ? 'disabled' : ''}></div>
@@ -1119,10 +1135,12 @@ function renderItemTable(data, totalCount) {
         const imageUrl = getItemImage(item);
         const useLife = getItemUseLife(item);
         const acquisValue = getItemAcquisValue(item);
+        const statusText = getActiveStatusLabel(item.active);
+        const statusClass = getActiveStatusClass(item.active);
         const encodedAssetCode = encodeURIComponent(item.asset_code || '');
         const rowNumber = currentItemPage * ITEM_PAGE_SIZE + index + 1;
         tr.innerHTML = `
-            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${formatDisplayValue(acquisValue)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${item.active ? 'status-active' : 'status-inactive'}">${item.active ? 'Active' : 'Inactive'}</span></td>
+            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${formatDisplayValue(acquisValue)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${statusClass}">${statusText}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
@@ -1169,7 +1187,7 @@ function openItemModal(item, mode) {
                     <div class="form-group full-width"><label>Description</label><input type="text" id="itm_desc" value="${item ? (item.description || '') : ''}" ${!isEditMode ? 'disabled' : ''} required></div>
                     <div class="form-group full-width"><label>Image</label><div id="itemImagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(imageValue, 'Item Image')}</div><input type="hidden" id="itm_image" value="${escapeAttribute(imageValue)}">${isEditMode ? `<div class="image-upload-row"><input type="file" id="itm_image_upload" accept="image/*" onchange="handleItemImageUpload(this)"><button type="button" class="btn-clear-image" onclick="clearItemImage()">ล้างรูป</button></div>` : ''}</div>
                     <div class="form-group"><label>Location Zone</label><input type="text" id="itm_zone" value="${item ? (item.location_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
-                    <div class="form-group"><label>Status</label><select id="itm_active" ${!isEditMode ? 'disabled' : ''}><option value="true" ${item && item.active ? 'selected' : ''}>Active</option><option value="false" ${item && !item.active ? 'selected' : ''}>Inactive</option></select></div>
+                    <div class="form-group"><label>Status</label><select id="itm_active" ${!isEditMode ? 'disabled' : ''}><option value="true" ${item && isActiveValue(item.active) ? 'selected' : ''}>Active</option><option value="false" ${item && !isActiveValue(item.active) ? 'selected' : ''}>Inactive</option></select></div>
                     <div class="form-group"><label>Created By (ID)</label><input type="text" value="${item ? (item.create_id || '') : currentUser.id}" disabled></div>
                     <div class="form-group"><label>Created At</label><input type="text" value="${item ? (item.created_at || '') : new Date().toLocaleString('th-TH')}" disabled></div>
                     <div class="form-group"><label>Last Edited By (ID)</label><input type="text" value="${mode === 'edit' ? currentUser.id : (item ? (item.edit_id || '') : '')}" disabled></div>
@@ -2430,8 +2448,8 @@ function renderPopupItemList(zoneName, filter = '') {
         const useLife = getItemUseLife(item);
         const assetCode = item.asset_code || '';
         const encodedAssetCode = escapeAttribute(encodeURIComponent(assetCode).replace(/'/g, '%27'));
-        const statusText = item.active ? 'Active' : 'Inactive';
-        const statusClass = item.active ? 'status-active' : 'status-inactive';
+        const statusText = getActiveStatusLabel(item.active);
+        const statusClass = getActiveStatusClass(item.active);
         const clickAttr = assetCode ? ` onclick="openDashboardItemFromPopup('${encodedAssetCode}')"` : '';
         const clickableClass = assetCode ? ' is-clickable' : '';
 
@@ -2468,7 +2486,7 @@ function dashboardItemMatchesFilter(item, filter = '') {
         item.description,
         item.location_zone,
         getItemUseLife(item),
-        item.active ? 'active' : 'inactive'
+        getActiveStatusLabel(item.active).toLowerCase()
     ].some(value => String(value ?? '').toLowerCase().includes(query));
 }
 
