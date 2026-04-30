@@ -22,11 +22,14 @@ let editingTransactionItem = null;
 const PAGE_SIZE = 500;
 const ITEM_PAGE_SIZE = 200;
 const FILTER_FETCH_SIZE = 1000;
+const USE_LIFE_DB_COLUMN = 'Use Life';
+const USE_LIFE_SYNC_STORAGE_KEY = 'wms_use_life_sync_date';
 let currentInventoryPage = 0;
 let currentItemPage = 0;
 let currentCategoryPage = 0;
 let currentTransactionPage = 0;
 let currentUserPage = 0;
+let useLifeSyncPromise = null;
 
 // --- Global Filters State ---
 let activeFilters = {
@@ -193,7 +196,7 @@ function getActiveStatusClass(value) {
 
 function getFilterRowValue(view, column, row) {
     if (view === 'items' && column === 'use_life') return getItemUseLife(row);
-    if (view === 'items' && column === 'acquis_value') return getItemAcquisValue(row);
+    if (view === 'items' && column === 'acquis_value') return formatAcquisValue(getItemAcquisValue(row), '');
     if (view === 'items' && column === 'status') return getActiveStatusLabel(row?.active);
     const dbColumn = getDbColumnFromViewColumn(view, column);
     return row ? row[dbColumn] : null;
@@ -845,9 +848,52 @@ function getItemImage(item) {
     return item.Image || item.image || '';
 }
 
+function getBangkokDateParts(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Bangkok',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+    return Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+}
+
+function getBangkokDateKey(date = new Date()) {
+    const parts = getBangkokDateParts(date);
+    return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function getCurrentThaiYearTwoDigit(date = new Date()) {
+    const parts = getBangkokDateParts(date);
+    return (Number(parts.year) + 543) % 100;
+}
+
+function calculateUseLifeFromInventoryCode(inventoryCode, date = new Date()) {
+    const code = String(inventoryCode ?? '').trim();
+    if (!code || code.charAt(0).toUpperCase() === 'D' || code.length <= 8) return null;
+
+    const inventoryYearText = code.slice(1, 3);
+    if (!/^\d{2}$/.test(inventoryYearText)) return null;
+
+    return getCurrentThaiYearTwoDigit(date) - Number(inventoryYearText);
+}
+
+function getStoredItemUseLife(item) {
+    if (!item) return '';
+    return item[USE_LIFE_DB_COLUMN] ?? item.use_life ?? item.useLife ?? '';
+}
+
+function setItemUseLife(item, value) {
+    if (!item) return;
+    item[USE_LIFE_DB_COLUMN] = value;
+    if ('use_life' in item) item.use_life = value;
+    if ('useLife' in item) item.useLife = value;
+}
+
 function getItemUseLife(item) {
     if (!item) return '';
-    return item['Use Life'] ?? item.use_life ?? item.useLife ?? '';
+    const calculatedUseLife = calculateUseLifeFromInventoryCode(item.inventory_code);
+    return calculatedUseLife ?? getStoredItemUseLife(item);
 }
 
 function getItemAcquisValue(item) {
@@ -855,8 +901,135 @@ function getItemAcquisValue(item) {
     return item['Acquis Value'] ?? item.acquis_value ?? item.acquisValue ?? '';
 }
 
+function formatAcquisValue(value, blankValue = '-') {
+    if (value === null || value === undefined || value === '') return blankValue;
+
+    const normalized = String(value).replace(/,/g, '').trim();
+    if (normalized === '') return blankValue;
+
+    const numericValue = Number(normalized);
+    if (!Number.isFinite(numericValue)) return value;
+
+    const decimalPart = normalized.includes('.') ? normalized.split('.')[1] : '';
+    const decimalLength = decimalPart ? Math.min(decimalPart.length, 20) : 0;
+
+    return numericValue.toLocaleString('en-US', {
+        minimumFractionDigits: decimalLength,
+        maximumFractionDigits: decimalLength
+    });
+}
+
 function formatDisplayValue(value) {
     return value === null || value === undefined || value === '' ? '-' : value;
+}
+
+function getUseLifeLastSyncDate() {
+    try {
+        return localStorage.getItem(USE_LIFE_SYNC_STORAGE_KEY);
+    } catch (err) {
+        return null;
+    }
+}
+
+function setUseLifeLastSyncDate(dateKey) {
+    try {
+        localStorage.setItem(USE_LIFE_SYNC_STORAGE_KEY, dateKey);
+    } catch (err) {
+        console.warn('Unable to save Use Life sync date:', err);
+    }
+}
+
+function shouldUpdateStoredUseLife(item, calculatedUseLife) {
+    const storedUseLife = getStoredItemUseLife(item);
+    const storedNumber = getComparableNumber(storedUseLife);
+    if (storedNumber !== null) return storedNumber !== calculatedUseLife;
+    return String(storedUseLife ?? '').trim() !== String(calculatedUseLife);
+}
+
+function getCalculatedUseLifeUpdates(rows) {
+    return (rows || []).reduce((updates, item) => {
+        const calculatedUseLife = calculateUseLifeFromInventoryCode(item?.inventory_code);
+        if (calculatedUseLife === null || !shouldUpdateStoredUseLife(item, calculatedUseLife)) return updates;
+
+        setItemUseLife(item, calculatedUseLife);
+        updates.push({
+            assetCode: item.asset_code,
+            inventoryCode: item.inventory_code,
+            useLife: calculatedUseLife
+        });
+        return updates;
+    }, []);
+}
+
+async function fetchAllItemRowsForUseLifeSync() {
+    let allRows = [];
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await _supabase
+            .from('Item Master')
+            .select('*')
+            .order('asset_code', { ascending: true })
+            .range(from, from + FILTER_FETCH_SIZE - 1);
+
+        if (error) throw error;
+        allRows = allRows.concat(data || []);
+        if (!data || data.length < FILTER_FETCH_SIZE) break;
+        from += FILTER_FETCH_SIZE;
+    }
+
+    return allRows;
+}
+
+async function updateUseLifeRowsInDatabase(updates) {
+    const chunkSize = 20;
+
+    for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await Promise.all(chunk.map(async update => {
+            let query = _supabase
+                .from('Item Master')
+                .update({ [USE_LIFE_DB_COLUMN]: update.useLife });
+
+            if (update.assetCode) query = query.eq('asset_code', update.assetCode);
+            else if (update.inventoryCode) query = query.eq('inventory_code', update.inventoryCode);
+            else return;
+
+            const { error } = await query;
+            if (error) throw error;
+        }));
+    }
+}
+
+async function syncItemUseLifeForToday() {
+    const todayKey = getBangkokDateKey();
+    if (getUseLifeLastSyncDate() === todayKey) return 0;
+    if (useLifeSyncPromise) return useLifeSyncPromise;
+
+    useLifeSyncPromise = (async () => {
+        const rows = await fetchAllItemRowsForUseLifeSync();
+        const updates = getCalculatedUseLifeUpdates(rows);
+
+        if (updates.length > 0) {
+            await updateUseLifeRowsInDatabase(updates);
+        }
+
+        setUseLifeLastSyncDate(todayKey);
+        return updates.length;
+    })().finally(() => {
+        useLifeSyncPromise = null;
+    });
+
+    return useLifeSyncPromise;
+}
+
+function updateItemUseLifePreview() {
+    const previewInput = document.getElementById('itm_use_life_preview');
+    if (!previewInput) return;
+
+    const inventoryCode = document.getElementById('itm_inv')?.value;
+    const calculatedUseLife = calculateUseLifeFromInventoryCode(inventoryCode);
+    previewInput.value = calculatedUseLife ?? '';
 }
 
 function escapeAttribute(value) {
@@ -1042,6 +1215,12 @@ async function loadItemData(page = 0) {
     const colSpan = hasPermission ? 10 : 9;
     tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
     try {
+        try {
+            await syncItemUseLifeForToday();
+        } catch (syncErr) {
+            console.warn('Use Life daily sync failed:', syncErr);
+        }
+
         const itemSort = activeSort.items || {};
         const clientSideFilterColumns = Object.keys(activeFilters.items).filter(col =>
             isClientSideItemFilterColumn(col) && activeFilters.items[col]?.length > 0
@@ -1140,7 +1319,7 @@ function renderItemTable(data, totalCount) {
         const encodedAssetCode = encodeURIComponent(item.asset_code || '');
         const rowNumber = currentItemPage * ITEM_PAGE_SIZE + index + 1;
         tr.innerHTML = `
-            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${formatDisplayValue(acquisValue)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${statusClass}">${statusText}</span></td>
+            <td class="row-number-cell">${rowNumber.toLocaleString()}</td><td>${item.asset_code}</td><td>${item.inventory_code || '-'}</td><td>${item.description || '-'}</td><td>${formatDisplayValue(useLife)}</td><td>${formatAcquisValue(acquisValue)}</td><td>${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="Item" class="table-thumb">` : '-'}</td><td>${item.location_zone || '-'}</td><td><span class="status-badge ${statusClass}">${statusText}</span></td>
             ${hasPermission ? `<td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openItemModalFromTable('${encodedAssetCode}', 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteItemRecord('${item.asset_code}')">🗑</button></div></td>` : ''}
         `;
         tableBody.appendChild(tr);
@@ -1180,10 +1359,10 @@ function openItemModal(item, mode) {
             <form id="itemForm">
                 <div class="modal-grid">
                     <div class="form-group"><label>Asset Code</label><input type="text" id="itm_asset" value="${item ? item.asset_code : ''}" ${mode !== 'add' ? 'disabled' : ''} required></div>
-                    <div class="form-group"><label>Inventory Code</label><input type="text" id="itm_inv" value="${item ? (item.inventory_code || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
+                    <div class="form-group"><label>Inventory Code</label><input type="text" id="itm_inv" value="${item ? (item.inventory_code || '') : ''}" ${!isEditMode ? 'disabled' : ''} oninput="updateItemUseLifePreview()"></div>
                     <div class="form-group"><label>Category ID</label><input type="text" id="itm_cat" value="${item ? (item.category_id || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
-                    <div class="form-group"><label>Use Life</label><input type="text" value="${escapeAttribute(useLifeValue)}" disabled></div>
-                    <div class="form-group"><label>Acquis Value</label><input type="text" value="${escapeAttribute(acquisValue)}" disabled></div>
+                    <div class="form-group"><label>Use Life</label><input type="text" id="itm_use_life_preview" value="${escapeAttribute(useLifeValue)}" disabled></div>
+                    <div class="form-group"><label>Acquis Value</label><input type="text" value="${escapeAttribute(formatAcquisValue(acquisValue))}" disabled></div>
                     <div class="form-group full-width"><label>Description</label><input type="text" id="itm_desc" value="${item ? (item.description || '') : ''}" ${!isEditMode ? 'disabled' : ''} required></div>
                     <div class="form-group full-width"><label>Image</label><div id="itemImagePreviewContainer" class="image-preview-container">${renderImagePreviewHtml(imageValue, 'Item Image')}</div><input type="hidden" id="itm_image" value="${escapeAttribute(imageValue)}">${isEditMode ? `<div class="image-upload-row"><input type="file" id="itm_image_upload" accept="image/*" onchange="handleItemImageUpload(this)"><button type="button" class="btn-clear-image" onclick="clearItemImage()">ล้างรูป</button></div>` : ''}</div>
                     <div class="form-group"><label>Location Zone</label><input type="text" id="itm_zone" value="${item ? (item.location_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
@@ -1203,6 +1382,8 @@ async function saveItemRecord(mode) {
     showLoading();
     const assetCode = document.getElementById('itm_asset').value;
     const itemData = { inventory_code: document.getElementById('itm_inv').value, category_id: document.getElementById('itm_cat').value, description: document.getElementById('itm_desc').value, Image: document.getElementById('itm_image').value, location_zone: document.getElementById('itm_zone').value, active: document.getElementById('itm_active').value === 'true', edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
+    const calculatedUseLife = calculateUseLifeFromInventoryCode(itemData.inventory_code);
+    if (calculatedUseLife !== null) itemData[USE_LIFE_DB_COLUMN] = calculatedUseLife;
     try {
         if (mode === 'add') {
             itemData.asset_code = assetCode;
