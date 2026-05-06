@@ -1288,6 +1288,9 @@ tbody tr {
 }
 
 .app-dialog-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 112px;
     height: 46px;
     padding: 0 20px;
@@ -1295,6 +1298,9 @@ tbody tr {
     border: none;
     cursor: pointer;
     font-weight: 800;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
     transition: all 0.2s ease;
 }
 
