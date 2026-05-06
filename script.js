@@ -148,18 +148,33 @@ async function populateFilterOptions(view, column) {
     try {
         const data = await fetchAllFilterColumnValues(view, column, tableName, dbColumn);
 
-        // Get unique values and remove nulls
-        let uniqueValues = [...new Set(data.map(item => getNormalizedFilterValue(getFilterRowValue(view, column, item))))];
-        uniqueValues.sort(compareNormalizedFilterValues);
+        const sourceData = view === 'items'
+            ? data.filter(item => itemMatchesItemSearchControls(item) && itemPassesItemFiltersExcept(item, column))
+            : data;
+
+        const getUniqueValues = (rows) => {
+            const values = [...new Set(rows.map(item => getNormalizedFilterValue(getFilterRowValue(view, column, item))))];
+            values.sort(compareNormalizedFilterValues);
+            return values;
+        };
+
+        // Get unique values from the full table result, not only the visible page.
+        let uniqueValues = getUniqueValues(sourceData);
         
         const renderOptions = (filterText = '') => {
-            const filtered = uniqueValues.filter(v => v.toLowerCase().includes(filterText.toLowerCase()));
+            const query = normalizeSearchText(filterText);
+            const filtered = view === 'items' && query
+                ? getUniqueValues(sourceData.filter(item =>
+                    getItemMasterSearchText(item).includes(query) ||
+                    normalizeSearchText(getFilterRowValue(view, column, item)).includes(query)
+                ))
+                : uniqueValues.filter(v => normalizeSearchText(v).includes(query));
             const selected = activeFilters[view][column] || [];
 
             optionsContainer.innerHTML = filtered.map(val => `
                 <label class="filter-option">
-                    <input type="checkbox" value="${val}" ${selected.includes(val) ? 'checked' : ''} onchange="updateFilterSelection('${view}', '${column}', '${val}', this.checked)">
-                    <span>${val}</span>
+                    <input type="checkbox" value="${escapeAttribute(val)}" data-filter-value="${escapeAttribute(val)}" ${selected.includes(val) ? 'checked' : ''} onchange="updateFilterSelection('${view}', '${column}', this.dataset.filterValue, this.checked)">
+                    <span>${escapeHtml(val)}</span>
                 </label>
             `).join('');
             if (filtered.length === 0) optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #999; text-align: center;">ไม่พบข้อมูล</div>';
@@ -231,6 +246,47 @@ function itemPassesClientSideFilters(item, columns) {
     });
 }
 
+function normalizeSearchText(value) {
+    return String(value ?? '').trim().toLowerCase();
+}
+
+function getItemMasterSearchText(item) {
+    return [
+        item?.asset_code,
+        item?.inventory_code,
+        item?.description,
+        item?.category_id,
+        getItemUseLife(item),
+        formatAcquisValue(getItemAcquisValue(item), ''),
+        item?.location_zone,
+        getActiveStatusLabel(item?.active)
+    ].map(normalizeSearchText).join(' ');
+}
+
+function itemMatchesItemSearchControls(item) {
+    const searchCode = normalizeSearchText(document.getElementById('searchAssetInventory')?.value || '');
+    const searchDescCat = normalizeSearchText(document.getElementById('searchItemDescCat')?.value || '');
+
+    if (searchCode) {
+        const codeText = [item?.asset_code, item?.inventory_code].map(normalizeSearchText).join(' ');
+        if (!codeText.includes(searchCode)) return false;
+    }
+
+    if (searchDescCat) {
+        const descCatText = [item?.description, item?.category_id].map(normalizeSearchText).join(' ');
+        if (!descCatText.includes(searchDescCat)) return false;
+    }
+
+    return true;
+}
+
+function itemPassesItemFiltersExcept(item, excludedColumn) {
+    return Object.entries(activeFilters.items || {}).every(([column, selected]) => {
+        if (column === excludedColumn || !selected || selected.length === 0) return true;
+        return selected.includes(getNormalizedFilterValue(getFilterRowValue('items', column, item)));
+    });
+}
+
 function compareItemRowsByColumn(column, direction) {
     return (a, b) => {
         const aValue = getFilterRowValue('items', column, a);
@@ -247,7 +303,7 @@ function compareItemRowsByColumn(column, direction) {
 async function fetchAllFilterColumnValues(view, column, tableName, dbColumn) {
     let allRows = [];
     let from = 0;
-    const useFullRow = view === 'items' && isClientSideItemFilterColumn(column);
+    const useFullRow = view === 'items';
 
     while (true) {
         let query = _supabase
@@ -283,7 +339,7 @@ function selectAllFilters(view, column, isAll) {
     const checkboxes = dropdown.querySelectorAll('.filter-options input[type="checkbox"]');
     checkboxes.forEach(cb => {
         cb.checked = isAll;
-        updateFilterSelection(view, column, cb.value, isAll);
+        updateFilterSelection(view, column, cb.dataset.filterValue ?? cb.value, isAll);
     });
 }
 
