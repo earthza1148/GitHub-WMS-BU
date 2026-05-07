@@ -2230,6 +2230,14 @@ function logout() { localStorage.removeItem('wms_user'); location.reload(); }
 // --- Dashboard View Implementation ---
 let dashboardData = {};
 let dashboardItemRows = [];
+let dashboardTransactionRows = [];
+let dashboardCharts = [];
+let dashboardFilters = {
+    zonePrefix: null,
+    categoryId: null,
+    useLifeGroup: null,
+    transactionStatus: null
+};
 let activePopupZoneName = '';
 let currentLayout = 'Indoor Floor 1';
 
@@ -2343,6 +2351,7 @@ function getItemCategoryId(row) {
 }
 
 const DASHBOARD_USE_LIFE_GROUP_LABELS = ['0-5 ปี', '6-10 ปี', '11-15 ปี', '16-20 ปี', '20 ปีขึ้นไป'];
+const DASHBOARD_DIMMED_CHART_COLOR = 'rgba(148, 163, 184, 0.24)';
 
 function getUseLifeGroupLabel(value) {
     const numericValue = Number(String(value ?? '').replace(/,/g, '').trim());
@@ -2352,6 +2361,112 @@ function getUseLifeGroupLabel(value) {
     if (numericValue <= 15) return '11-15 ปี';
     if (numericValue <= 20) return '16-20 ปี';
     return '20 ปีขึ้นไป';
+}
+
+function getDashboardFilteredColor(value, selectedValue, activeColor) {
+    return selectedValue && value !== selectedValue ? DASHBOARD_DIMMED_CHART_COLOR : activeColor;
+}
+
+function getDashboardFilterValue(filterKey, overrides = {}) {
+    return Object.prototype.hasOwnProperty.call(overrides, filterKey)
+        ? overrides[filterKey]
+        : dashboardFilters[filterKey];
+}
+
+function itemMatchesDashboardFiltersWithOverrides(row, overrides = {}) {
+    if (!row) return false;
+
+    const zonePrefix = getDashboardFilterValue('zonePrefix', overrides);
+    const categoryId = getDashboardFilterValue('categoryId', overrides);
+    const useLifeGroup = getDashboardFilterValue('useLifeGroup', overrides);
+
+    if (zonePrefix && getLocationZonePrefix(row.location_zone) !== zonePrefix) {
+        return false;
+    }
+    if (categoryId && getItemCategoryId(row) !== categoryId) {
+        return false;
+    }
+    if (useLifeGroup && getUseLifeGroupLabel(getItemUseLife(row)) !== useLifeGroup) {
+        return false;
+    }
+
+    return true;
+}
+
+function itemMatchesDashboardFilters(row) {
+    return itemMatchesDashboardFiltersWithOverrides(row);
+}
+
+function transactionMatchesDashboardFiltersWithOverrides(row, overrides = {}) {
+    if (!row) return false;
+    const transactionStatus = getDashboardFilterValue('transactionStatus', overrides);
+    if (transactionStatus && (row.status || 'N/A') !== transactionStatus) {
+        return false;
+    }
+    return true;
+}
+
+function transactionMatchesDashboardFilters(row) {
+    return transactionMatchesDashboardFiltersWithOverrides(row);
+}
+
+function clearDashboardCharts() {
+    dashboardCharts.forEach(chart => {
+        if (chart && typeof chart.destroy === 'function') chart.destroy();
+    });
+    dashboardCharts = [];
+}
+
+function setDashboardFilter(filterKey, value) {
+    if (!Object.prototype.hasOwnProperty.call(dashboardFilters, filterKey)) return;
+    dashboardFilters[filterKey] = dashboardFilters[filterKey] === value ? null : value;
+    closeZonePopup();
+    renderDashboardView({ refreshData: false });
+}
+
+function clearDashboardFilter(filterKey) {
+    if (!Object.prototype.hasOwnProperty.call(dashboardFilters, filterKey)) return;
+    dashboardFilters[filterKey] = null;
+    closeZonePopup();
+    renderDashboardView({ refreshData: false });
+}
+
+function clearDashboardFilters() {
+    dashboardFilters = {
+        zonePrefix: null,
+        categoryId: null,
+        useLifeGroup: null,
+        transactionStatus: null
+    };
+    closeZonePopup();
+    renderDashboardView({ refreshData: false });
+}
+
+function renderDashboardFilterChip(filterKey, label, value) {
+    return `
+        <button type="button" class="dashboard-filter-chip" onclick="clearDashboardFilter('${filterKey}')">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+            <span class="dashboard-filter-chip-x">×</span>
+        </button>
+    `;
+}
+
+function renderDashboardFilterStrip() {
+    const chips = [];
+    if (dashboardFilters.zonePrefix) chips.push(renderDashboardFilterChip('zonePrefix', 'Zone', dashboardFilters.zonePrefix));
+    if (dashboardFilters.categoryId) chips.push(renderDashboardFilterChip('categoryId', 'Category', dashboardFilters.categoryId));
+    if (dashboardFilters.useLifeGroup) chips.push(renderDashboardFilterChip('useLifeGroup', 'Use Life', dashboardFilters.useLifeGroup));
+    if (dashboardFilters.transactionStatus) chips.push(renderDashboardFilterChip('transactionStatus', 'Status', dashboardFilters.transactionStatus));
+
+    if (chips.length === 0) return '';
+
+    return `
+        <div class="dashboard-filter-strip">
+            <div class="dashboard-filter-chip-list">${chips.join('')}</div>
+            <button type="button" class="dashboard-clear-filters" onclick="clearDashboardFilters()">Clear All</button>
+        </div>
+    `;
 }
 
 function formatCompactDashboardNumber(value) {
@@ -2459,14 +2574,88 @@ const DASHBOARD_PIE_PERCENT_LABEL_PLUGIN = {
     }
 };
 
-async function renderDashboardView() {
+function buildDashboardStatsSnapshot(itemFilterOverrides = {}, transactionFilterOverrides = {}) {
+    const filteredItemRows = dashboardItemRows.filter(row => itemMatchesDashboardFiltersWithOverrides(row, itemFilterOverrides));
+    const filteredTransactionRows = dashboardTransactionRows.filter(row => transactionMatchesDashboardFiltersWithOverrides(row, transactionFilterOverrides));
+    const zones = {};
+    const prefixZones = {};
+    const categoryStats = {};
+    const categoryAcquisStats = {};
+    const useLifeGroups = Object.fromEntries(DASHBOARD_USE_LIFE_GROUP_LABELS.map(label => [label, 0]));
+    let totalAcquisValue = 0;
+    const uniqueDescs = new Set();
+
+    filteredItemRows.forEach(row => {
+        const catId = getItemCategoryId(row);
+        categoryStats[catId] = (categoryStats[catId] || 0) + 1;
+
+        const acquisValue = getNumericAcquisValue(getItemAcquisValue(row));
+        totalAcquisValue += acquisValue;
+        categoryAcquisStats[catId] = (categoryAcquisStats[catId] || 0) + acquisValue;
+
+        const useLifeGroup = getUseLifeGroupLabel(getItemUseLife(row));
+        if (useLifeGroup) useLifeGroups[useLifeGroup] += 1;
+
+        const z = String(row.location_zone || '').trim() || 'Unknown';
+        const prefix = getLocationZonePrefix(z);
+        const desc = row.description || 'No Description';
+        const img = getItemImage(row) || null;
+
+        if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {}, items: [] };
+        if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img, items: [] };
+
+        zones[z].totalQty += 1;
+        zones[z].items.push(row);
+        zones[z].descriptions[desc].qty += 1;
+        zones[z].descriptions[desc].items.push(row);
+        if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
+
+        prefixZones[prefix] = (prefixZones[prefix] || 0) + 1;
+        uniqueDescs.add(desc);
+    });
+
+    const statusCounts = {};
+    filteredTransactionRows.forEach(t => {
+        const status = t.status || 'N/A';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+    });
+
+    const stats = {
+        totalZones: Object.keys(zones).length,
+        totalQty: filteredItemRows.length,
+        totalItems: uniqueDescs.size,
+        totalCategories: Object.keys(categoryStats).length,
+        totalAcquisValue: totalAcquisValue,
+        statusCounts: statusCounts,
+        prefixZones: prefixZones,
+        categoryStats: categoryStats,
+        categoryAcquisStats: categoryAcquisStats,
+        useLifeGroups: useLifeGroups
+    };
+
+    return { zones, stats };
+}
+
+function buildDashboardStats() {
+    const snapshot = buildDashboardStatsSnapshot();
+    dashboardData = snapshot.zones;
+    dashboardStats = snapshot.stats;
+    return dashboardStats;
+}
+
+async function renderDashboardView(options = {}) {
     const mainContent = document.getElementById('mainContent');
     const cfg = layoutConfigs[currentLayout];
+    const refreshData = options.refreshData !== false;
     
-    // Fetch data including new stats
-    await fetchDashboardData();
+    if (refreshData) {
+        await fetchDashboardData();
+    } else {
+        buildDashboardStats();
+    }
     
     const stats = dashboardStats;
+    clearDashboardCharts();
 
     mainContent.innerHTML = `
         <!-- Main Stats Row -->
@@ -2507,6 +2696,8 @@ async function renderDashboardView() {
                 <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
             </div>
         </div>
+
+        ${renderDashboardFilterStrip()}
 
         <!-- Visual Analytics Row -->
         <div class="analytics-row">
@@ -2583,15 +2774,25 @@ function initDashboardCharts(stats) {
     const ctxCategory = document.getElementById('categoryChart').getContext('2d');
     const ctxAcquisCategory = document.getElementById('acquisCategoryChart').getContext('2d');
     const ctxUseLife = document.getElementById('useLifeChart').getContext('2d');
+    const statusVisualStats = buildDashboardStatsSnapshot({}, { transactionStatus: null }).stats;
+    const zoneVisualStats = buildDashboardStatsSnapshot({ zonePrefix: null }).stats;
+    const categoryVisualStats = buildDashboardStatsSnapshot({ categoryId: null }).stats;
+    const useLifeVisualStats = buildDashboardStatsSnapshot({ useLifeGroup: null }).stats;
 
     // 1. Transaction Status Chart (Doughnut)
-    new Chart(ctxStatus, {
+    const statusLabels = Object.keys(statusVisualStats.statusCounts);
+    const statusData = statusLabels.map(label => statusVisualStats.statusCounts[label]);
+    const statusBaseColors = ['#e17055', '#00b894', '#fdcb6e', '#3a7bd5', '#a29bfe'];
+
+    dashboardCharts.push(new Chart(ctxStatus, {
         type: 'doughnut',
         data: {
-            labels: Object.keys(stats.statusCounts),
+            labels: statusLabels,
             datasets: [{
-                data: Object.values(stats.statusCounts),
-                backgroundColor: ['#e17055', '#00b894', '#fdcb6e', '#3a7bd5', '#a29bfe'],
+                data: statusData,
+                backgroundColor: statusLabels.map((label, index) =>
+                    getDashboardFilteredColor(label, dashboardFilters.transactionStatus, statusBaseColors[index % statusBaseColors.length])
+                ),
                 borderWidth: 0,
                 hoverOffset: 15
             }]
@@ -2601,26 +2802,32 @@ function initDashboardCharts(stats) {
             maintainAspectRatio: false,
             interaction: { mode: 'nearest', intersect: false },
             hover: { mode: 'nearest', intersect: false },
+            onClick: (_event, elements) => {
+                if (!elements.length) return;
+                setDashboardFilter('transactionStatus', statusLabels[elements[0].index]);
+            },
             plugins: {
                 legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Kanit', size: 11 } } },
                 tooltip: { padding: 15, bodyFont: { family: 'Kanit' }, titleFont: { family: 'Kanit' } }
             },
             cutout: '70%'
         }
-    });
+    }));
 
     // 2. Zone Group Chart (Horizontal Bar)
-    const zoneLabels = Object.keys(stats.prefixZones).sort((a,b) => stats.prefixZones[b] - stats.prefixZones[a]);
-    const zoneData = zoneLabels.map(l => stats.prefixZones[l]);
+    const zoneLabels = Object.keys(zoneVisualStats.prefixZones).sort((a,b) => zoneVisualStats.prefixZones[b] - zoneVisualStats.prefixZones[a]);
+    const zoneData = zoneLabels.map(l => zoneVisualStats.prefixZones[l]);
 
-    new Chart(ctxZone, {
+    dashboardCharts.push(new Chart(ctxZone, {
         type: 'bar',
         data: {
             labels: zoneLabels,
             datasets: [{
                 label: 'Location Zone Count',
                 data: zoneData,
-                backgroundColor: zoneLabels.map((_, i) => i % 2 === 0 ? '#3A2E5B' : '#E67E22'),
+                backgroundColor: zoneLabels.map((label, i) =>
+                    getDashboardFilteredColor(label, dashboardFilters.zonePrefix, i % 2 === 0 ? '#3A2E5B' : '#E67E22')
+                ),
                 borderRadius: 10,
                 barThickness: 20
             }]
@@ -2632,6 +2839,10 @@ function initDashboardCharts(stats) {
             interaction: { mode: 'nearest', intersect: false, axis: 'y' },
             hover: { mode: 'nearest', intersect: false },
             layout: { padding: { right: 42 } },
+            onClick: (_event, elements) => {
+                if (!elements.length) return;
+                setDashboardFilter('zonePrefix', zoneLabels[elements[0].index]);
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -2654,20 +2865,22 @@ function initDashboardCharts(stats) {
             }
         },
         plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
-    });
+    }));
 
     // 3. Category ID Summary Chart from Item Master category_id (Bar)
-    const catLabels = Object.keys(stats.categoryStats).sort((a,b) => stats.categoryStats[b] - stats.categoryStats[a]).slice(0, 10);
-    const catData = catLabels.map(l => stats.categoryStats[l]);
+    const catLabels = Object.keys(categoryVisualStats.categoryStats).sort((a,b) => categoryVisualStats.categoryStats[b] - categoryVisualStats.categoryStats[a]).slice(0, 10);
+    const catData = catLabels.map(l => categoryVisualStats.categoryStats[l]);
 
-    new Chart(ctxCategory, {
+    dashboardCharts.push(new Chart(ctxCategory, {
         type: 'bar',
         data: {
             labels: catLabels,
             datasets: [{
                 label: 'Category ID Count',
                 data: catData,
-                backgroundColor: '#3a7bd5',
+                backgroundColor: catLabels.map(label =>
+                    getDashboardFilteredColor(label, dashboardFilters.categoryId, '#3a7bd5')
+                ),
                 borderRadius: 8
             }]
         },
@@ -2677,6 +2890,10 @@ function initDashboardCharts(stats) {
             interaction: { mode: 'nearest', intersect: false, axis: 'x' },
             hover: { mode: 'nearest', intersect: false },
             layout: { padding: { top: 22 } },
+            onClick: (_event, elements) => {
+                if (!elements.length) return;
+                setDashboardFilter('categoryId', catLabels[elements[0].index]);
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -2699,22 +2916,24 @@ function initDashboardCharts(stats) {
             }
         },
         plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
-    });
+    }));
 
     // 4. Acquis Value by Category from Item Master (Bar)
-    const acquisCategoryStats = stats.categoryAcquisStats || {};
+    const acquisCategoryStats = categoryVisualStats.categoryAcquisStats || {};
     const acquisLabels = Object.keys(acquisCategoryStats)
         .sort((a, b) => acquisCategoryStats[b] - acquisCategoryStats[a]);
     const acquisData = acquisLabels.map(label => acquisCategoryStats[label]);
 
-    new Chart(ctxAcquisCategory, {
+    dashboardCharts.push(new Chart(ctxAcquisCategory, {
         type: 'bar',
         data: {
             labels: acquisLabels,
             datasets: [{
                 label: 'Acquis Value',
                 data: acquisData,
-                backgroundColor: '#0f766e',
+                backgroundColor: acquisLabels.map(label =>
+                    getDashboardFilteredColor(label, dashboardFilters.categoryId, '#0f766e')
+                ),
                 borderRadius: 8
             }]
         },
@@ -2724,6 +2943,10 @@ function initDashboardCharts(stats) {
             interaction: { mode: 'nearest', intersect: false, axis: 'x' },
             hover: { mode: 'nearest', intersect: false },
             layout: { padding: { top: 24 } },
+            onClick: (_event, elements) => {
+                if (!elements.length) return;
+                setDashboardFilter('categoryId', acquisLabels[elements[0].index]);
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -2749,19 +2972,22 @@ function initDashboardCharts(stats) {
             }
         },
         plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
-    });
+    }));
 
     // 5. Use Life groups from Item Master (Pie)
     const useLifeLabels = DASHBOARD_USE_LIFE_GROUP_LABELS;
-    const useLifeData = useLifeLabels.map(label => stats.useLifeGroups?.[label] || 0);
+    const useLifeData = useLifeLabels.map(label => useLifeVisualStats.useLifeGroups?.[label] || 0);
+    const useLifeBaseColors = ['#14b8a6', '#3a7bd5', '#f59e0b', '#ef4444', '#3A2E5B'];
 
-    new Chart(ctxUseLife, {
+    dashboardCharts.push(new Chart(ctxUseLife, {
         type: 'pie',
         data: {
             labels: useLifeLabels,
             datasets: [{
                 data: useLifeData,
-                backgroundColor: ['#14b8a6', '#3a7bd5', '#f59e0b', '#ef4444', '#3A2E5B'],
+                backgroundColor: useLifeLabels.map((label, index) =>
+                    getDashboardFilteredColor(label, dashboardFilters.useLifeGroup, useLifeBaseColors[index])
+                ),
                 borderWidth: 0,
                 hoverOffset: 12
             }]
@@ -2771,6 +2997,10 @@ function initDashboardCharts(stats) {
             maintainAspectRatio: false,
             interaction: { mode: 'nearest', intersect: false },
             hover: { mode: 'nearest', intersect: false },
+            onClick: (_event, elements) => {
+                if (!elements.length) return;
+                setDashboardFilter('useLifeGroup', useLifeLabels[elements[0].index]);
+            },
             plugins: {
                 legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Kanit', size: 11 } } },
                 tooltip: {
@@ -2784,7 +3014,7 @@ function initDashboardCharts(stats) {
             }
         },
         plugins: [DASHBOARD_PIE_PERCENT_LABEL_PLUGIN]
-    });
+    }));
 }
 
 function drawInteractiveLayout() {
@@ -2811,6 +3041,9 @@ function drawInteractiveLayout() {
         const zoneInfo = dashboardData[code] || { totalQty: 0 };
         const div = document.createElement('div');
         div.className = 'slot';
+        if (dashboardFilters.zonePrefix && getLocationZonePrefix(code) === dashboardFilters.zonePrefix) {
+            div.classList.add('active');
+        }
         div.style.left = pos.left + 'px';
         div.style.top = pos.top + 'px';
         div.style.width = pos.width + 'px';
@@ -2838,7 +3071,7 @@ function drawInteractiveLayout() {
 
 async function changeLayout(layoutKey) {
     currentLayout = layoutKey;
-    renderDashboardView();
+    renderDashboardView({ refreshData: false });
 }
 
 let dashboardStats = {};
@@ -2871,80 +3104,19 @@ async function fetchDashboardData() {
         showLoading();
         dashboardData = {};
         dashboardItemRows = [];
+        dashboardTransactionRows = [];
         
-        // Dashboard zone counts come from Item Master by Location Zone.
-        const [itemRes, catRes, transRes] = await Promise.all([
+        const [itemRes, transRes] = await Promise.all([
             fetchAllDashboardItemRows(),
-            _supabase.from('Category Master').select('id', { count: 'exact', head: true }),
             _supabase.from('Transection Inventory').select('status')
         ]);
 
         if (itemRes.error) throw itemRes.error;
-        if (catRes.error) throw catRes.error;
         if (transRes.error) throw transRes.error;
 
-        const zones = {};
-        const prefixZones = {}; // Count Item Master rows by first 2 chars of Location Zone (AA, BB, etc.)
-        const categoryStats = {}; // Count Item Master rows by category_id.
-        const categoryAcquisStats = {}; // Sum Acquis Value by category_id.
-        const useLifeGroups = Object.fromEntries(DASHBOARD_USE_LIFE_GROUP_LABELS.map(label => [label, 0]));
-        let totalQty = 0;
-        let totalAcquisValue = 0;
-        let uniqueDescs = new Set();
-
-        // Process Item Master: 1 row = 1 item/unit in a Location Zone.
         dashboardItemRows = itemRes.data || [];
-        dashboardItemRows.forEach(row => {
-            const catId = getItemCategoryId(row);
-            categoryStats[catId] = (categoryStats[catId] || 0) + 1;
-
-            const acquisValue = getNumericAcquisValue(getItemAcquisValue(row));
-            totalAcquisValue += acquisValue;
-            categoryAcquisStats[catId] = (categoryAcquisStats[catId] || 0) + acquisValue;
-
-            const useLifeGroup = getUseLifeGroupLabel(getItemUseLife(row));
-            if (useLifeGroup) useLifeGroups[useLifeGroup] += 1;
-            
-            const z = String(row.location_zone || '').trim() || 'Unknown';
-            const prefix = getLocationZonePrefix(z);
-            const desc = row.description || 'No Description';
-            const img = getItemImage(row) || null;
-
-            if (!zones[z]) zones[z] = { totalQty: 0, descriptions: {}, items: [] };
-            if (!zones[z].descriptions[desc]) zones[z].descriptions[desc] = { qty: 0, image: img, items: [] };
-            
-            zones[z].totalQty += 1;
-            zones[z].items.push(row);
-            zones[z].descriptions[desc].qty += 1;
-            zones[z].descriptions[desc].items.push(row);
-            if (img && !zones[z].descriptions[desc].image) zones[z].descriptions[desc].image = img;
-
-            prefixZones[prefix] = (prefixZones[prefix] || 0) + 1;
-            totalQty += 1;
-            uniqueDescs.add(desc);
-        });
-
-        // Global Stats
-        const statusCounts = {};
-        transRes.data.forEach(t => {
-            const status = t.status || 'N/A';
-            statusCounts[status] = (statusCounts[status] || 0) + 1;
-        });
-
-        dashboardStats = {
-            totalZones: Object.keys(zones).length,
-            totalQty: itemRes.count ?? totalQty,
-            totalItems: uniqueDescs.size,
-            totalCategories: catRes.count || 0,
-            totalAcquisValue: totalAcquisValue,
-            statusCounts: statusCounts,
-            prefixZones: prefixZones,
-            categoryStats: categoryStats,
-            categoryAcquisStats: categoryAcquisStats,
-            useLifeGroups: useLifeGroups
-        };
-
-        dashboardData = zones;
+        dashboardTransactionRows = transRes.data || [];
+        buildDashboardStats();
     } catch (err) {
         console.error('Error fetching dashboard data:', err);
     } finally {
