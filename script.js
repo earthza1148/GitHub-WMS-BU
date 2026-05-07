@@ -988,6 +988,12 @@ function getItemAcquisValue(item) {
     return item['Acquis Value'] ?? item.acquis_value ?? item.acquisValue ?? '';
 }
 
+function getNumericAcquisValue(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    const numericValue = Number(String(value).replace(/,/g, '').trim());
+    return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
 function formatAcquisValue(value, blankValue = '-') {
     if (value === null || value === undefined || value === '') return blankValue;
 
@@ -2336,6 +2342,123 @@ function getItemCategoryId(row) {
     return String(row?.category_id || '').trim() || 'Unknown';
 }
 
+const DASHBOARD_USE_LIFE_GROUP_LABELS = ['0-5 ปี', '6-10 ปี', '11-15 ปี', '16-20 ปี', '20 ปีขึ้นไป'];
+
+function getUseLifeGroupLabel(value) {
+    const numericValue = Number(String(value ?? '').replace(/,/g, '').trim());
+    if (!Number.isFinite(numericValue)) return null;
+    if (numericValue <= 5) return '0-5 ปี';
+    if (numericValue <= 10) return '6-10 ปี';
+    if (numericValue <= 15) return '11-15 ปี';
+    if (numericValue <= 20) return '16-20 ปี';
+    return '20 ปีขึ้นไป';
+}
+
+function formatCompactDashboardNumber(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return '-';
+
+    const absValue = Math.abs(numericValue);
+    const formatUnit = (divisor, suffix) => {
+        const compactValue = numericValue / divisor;
+        const digits = Math.abs(compactValue) >= 10 ? 0 : 1;
+        return `${compactValue.toFixed(digits).replace(/\.0$/, '')} ${suffix}`;
+    };
+
+    if (absValue >= 1000000000) return formatUnit(1000000000, 'B');
+    if (absValue >= 1000000) return formatUnit(1000000, 'M');
+    if (absValue >= 1000) return formatUnit(1000, 'K');
+    return numericValue.toLocaleString('en-US');
+}
+
+function getDashboardSuggestedMax(values, multiplier = 1.18) {
+    const maxValue = Math.max(...values.map(value => Number(value) || 0));
+    if (!Number.isFinite(maxValue) || maxValue <= 0) return undefined;
+    return Math.ceil(maxValue * multiplier);
+}
+
+const DASHBOARD_BAR_VALUE_LABEL_PLUGIN = {
+    id: 'dashboardBarValueLabel',
+    afterDatasetsDraw(chart, _args, options) {
+        const { ctx, chartArea } = chart;
+        const formatter = options?.formatter || formatCompactDashboardNumber;
+        const isHorizontal = chart.options.indexAxis === 'y';
+
+        ctx.save();
+        ctx.fillStyle = options?.color || '#334155';
+        ctx.strokeStyle = options?.strokeColor || 'rgba(255, 255, 255, 0.96)';
+        ctx.lineWidth = options?.strokeWidth || 4;
+        ctx.lineJoin = 'round';
+        ctx.font = '800 11px Kanit, sans-serif';
+        ctx.textBaseline = 'middle';
+
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (meta.hidden) return;
+
+            meta.data.forEach((bar, index) => {
+                const rawValue = dataset.data[index];
+                const numericValue = Number(rawValue);
+                if (!Number.isFinite(numericValue) || numericValue === 0) return;
+
+                const label = formatter(numericValue);
+                const labelWidth = ctx.measureText(label).width;
+
+                if (isHorizontal) {
+                    ctx.textAlign = 'left';
+                    const rightEdge = Math.max(bar.x, bar.base || chartArea.left);
+                    const labelX = Math.min(rightEdge + 8, chartArea.right - labelWidth);
+                    ctx.strokeText(label, labelX, bar.y);
+                    ctx.fillText(label, labelX, bar.y);
+                } else {
+                    ctx.textAlign = 'center';
+                    const labelY = Math.max(bar.y - 12, chartArea.top + 10);
+                    ctx.strokeText(label, bar.x, labelY);
+                    ctx.fillText(label, bar.x, labelY);
+                }
+            });
+        });
+
+        ctx.restore();
+    }
+};
+
+const DASHBOARD_PIE_PERCENT_LABEL_PLUGIN = {
+    id: 'dashboardPiePercentLabel',
+    afterDatasetsDraw(chart, _args, options) {
+        const { ctx } = chart;
+        const dataset = chart.data.datasets[0];
+        if (!dataset) return;
+
+        const values = dataset.data.map(value => Number(value) || 0);
+        const total = values.reduce((sum, value) => sum + value, 0);
+        if (total <= 0) return;
+
+        ctx.save();
+        ctx.fillStyle = options?.color || '#ffffff';
+        ctx.strokeStyle = options?.strokeColor || 'rgba(15, 23, 42, 0.35)';
+        ctx.lineWidth = options?.strokeWidth || 3;
+        ctx.lineJoin = 'round';
+        ctx.font = '800 13px Kanit, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const meta = chart.getDatasetMeta(0);
+        meta.data.forEach((arc, index) => {
+            const value = values[index];
+            if (value <= 0) return;
+
+            const percent = (value / total) * 100;
+            const label = `${percent >= 10 ? percent.toFixed(0) : percent.toFixed(1)}%`;
+            const position = arc.tooltipPosition();
+            ctx.strokeText(label, position.x, position.y);
+            ctx.fillText(label, position.x, position.y);
+        });
+
+        ctx.restore();
+    }
+};
+
 async function renderDashboardView() {
     const mainContent = document.getElementById('mainContent');
     const cfg = layoutConfigs[currentLayout];
@@ -2374,6 +2497,15 @@ async function renderDashboardView() {
                 </div>
                 <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
             </div>
+
+            <div class="stat-card modern-card" style="background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%);">
+                <div class="card-icon">💰</div>
+                <div class="card-info">
+                    <span class="card-label">Acquis Value รวม</span>
+                    <div class="card-value">${formatAcquisValue(stats.totalAcquisValue, '0')} <span class="unit">Value</span></div>
+                </div>
+                <div class="card-progress"><div class="progress-bar" style="width: 100%"></div></div>
+            </div>
         </div>
 
         <!-- Visual Analytics Row -->
@@ -2399,6 +2531,22 @@ async function renderDashboardView() {
                 <h3>📁 Category ID Summary</h3>
                 <div class="chart-container">
                     <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Column 4: Use Life Groups -->
+            <div class="analytics-card">
+                <h3>🕒 Use Life (Year)</h3>
+                <div class="chart-container">
+                    <canvas id="useLifeChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Full Row: Acquis Value by Category -->
+            <div class="analytics-card analytics-card-wide">
+                <h3>💰 Acquis Value by Category</h3>
+                <div class="chart-container chart-container-wide">
+                    <canvas id="acquisCategoryChart"></canvas>
                 </div>
             </div>
         </div>
@@ -2433,6 +2581,8 @@ function initDashboardCharts(stats) {
     const ctxStatus = document.getElementById('statusChart').getContext('2d');
     const ctxZone = document.getElementById('zoneChart').getContext('2d');
     const ctxCategory = document.getElementById('categoryChart').getContext('2d');
+    const ctxAcquisCategory = document.getElementById('acquisCategoryChart').getContext('2d');
+    const ctxUseLife = document.getElementById('useLifeChart').getContext('2d');
 
     // 1. Transaction Status Chart (Doughnut)
     new Chart(ctxStatus, {
@@ -2449,6 +2599,8 @@ function initDashboardCharts(stats) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            hover: { mode: 'nearest', intersect: false },
             plugins: {
                 legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Kanit', size: 11 } } },
                 tooltip: { padding: 15, bodyFont: { family: 'Kanit' }, titleFont: { family: 'Kanit' } }
@@ -2477,12 +2629,31 @@ function initDashboardCharts(stats) {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            interaction: { mode: 'nearest', intersect: false, axis: 'y' },
+            hover: { mode: 'nearest', intersect: false },
+            layout: { padding: { right: 42 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.label}: ${Number(context.parsed.x || 0).toLocaleString()} รายการ`
+                    },
+                    bodyFont: { family: 'Kanit' },
+                    titleFont: { family: 'Kanit' }
+                },
+                dashboardBarValueLabel: { formatter: formatCompactDashboardNumber }
+            },
             scales: {
-                x: { grid: { display: false }, ticks: { font: { family: 'Kanit' } } },
+                x: {
+                    beginAtZero: true,
+                    suggestedMax: getDashboardSuggestedMax(zoneData),
+                    grid: { display: false },
+                    ticks: { font: { family: 'Kanit' }, callback: value => formatCompactDashboardNumber(value) }
+                },
                 y: { grid: { display: false }, ticks: { font: { family: 'Kanit', weight: 'bold' } } }
             }
-        }
+        },
+        plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
     });
 
     // 3. Category ID Summary Chart from Item Master category_id (Bar)
@@ -2503,12 +2674,116 @@ function initDashboardCharts(stats) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+            hover: { mode: 'nearest', intersect: false },
+            layout: { padding: { top: 22 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.label}: ${Number(context.parsed.y || 0).toLocaleString()} รายการ`
+                    },
+                    bodyFont: { family: 'Kanit' },
+                    titleFont: { family: 'Kanit' }
+                },
+                dashboardBarValueLabel: { formatter: formatCompactDashboardNumber }
+            },
             scales: {
                 x: { grid: { display: false }, ticks: { font: { family: 'Kanit', size: 10 } } },
-                y: { grid: { color: '#f0f0f0' }, ticks: { font: { family: 'Kanit' } } }
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: getDashboardSuggestedMax(catData),
+                    grid: { color: '#f0f0f0' },
+                    ticks: { font: { family: 'Kanit' }, callback: value => formatCompactDashboardNumber(value) }
+                }
             }
-        }
+        },
+        plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
+    });
+
+    // 4. Acquis Value by Category from Item Master (Bar)
+    const acquisCategoryStats = stats.categoryAcquisStats || {};
+    const acquisLabels = Object.keys(acquisCategoryStats)
+        .sort((a, b) => acquisCategoryStats[b] - acquisCategoryStats[a]);
+    const acquisData = acquisLabels.map(label => acquisCategoryStats[label]);
+
+    new Chart(ctxAcquisCategory, {
+        type: 'bar',
+        data: {
+            labels: acquisLabels,
+            datasets: [{
+                label: 'Acquis Value',
+                data: acquisData,
+                backgroundColor: '#0f766e',
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false, axis: 'x' },
+            hover: { mode: 'nearest', intersect: false },
+            layout: { padding: { top: 24 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: context => `Acquis Value: ${formatAcquisValue(context.parsed.y, '0')}`
+                    },
+                    bodyFont: { family: 'Kanit' },
+                    titleFont: { family: 'Kanit' }
+                },
+                dashboardBarValueLabel: { formatter: formatCompactDashboardNumber }
+            },
+            scales: {
+                x: { grid: { display: false }, ticks: { font: { family: 'Kanit', size: 10 } } },
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: getDashboardSuggestedMax(acquisData),
+                    grid: { color: '#f0f0f0' },
+                    ticks: {
+                        font: { family: 'Kanit' },
+                        callback: value => formatCompactDashboardNumber(value)
+                    }
+                }
+            }
+        },
+        plugins: [DASHBOARD_BAR_VALUE_LABEL_PLUGIN]
+    });
+
+    // 5. Use Life groups from Item Master (Pie)
+    const useLifeLabels = DASHBOARD_USE_LIFE_GROUP_LABELS;
+    const useLifeData = useLifeLabels.map(label => stats.useLifeGroups?.[label] || 0);
+
+    new Chart(ctxUseLife, {
+        type: 'pie',
+        data: {
+            labels: useLifeLabels,
+            datasets: [{
+                data: useLifeData,
+                backgroundColor: ['#14b8a6', '#3a7bd5', '#f59e0b', '#ef4444', '#3A2E5B'],
+                borderWidth: 0,
+                hoverOffset: 12
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            hover: { mode: 'nearest', intersect: false },
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, font: { family: 'Kanit', size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: context => `${context.label}: ${Number(context.parsed || 0).toLocaleString()} รายการ`
+                    },
+                    bodyFont: { family: 'Kanit' },
+                    titleFont: { family: 'Kanit' }
+                },
+                dashboardPiePercentLabel: {}
+            }
+        },
+        plugins: [DASHBOARD_PIE_PERCENT_LABEL_PLUGIN]
     });
 }
 
@@ -2611,7 +2886,10 @@ async function fetchDashboardData() {
         const zones = {};
         const prefixZones = {}; // Count Item Master rows by first 2 chars of Location Zone (AA, BB, etc.)
         const categoryStats = {}; // Count Item Master rows by category_id.
+        const categoryAcquisStats = {}; // Sum Acquis Value by category_id.
+        const useLifeGroups = Object.fromEntries(DASHBOARD_USE_LIFE_GROUP_LABELS.map(label => [label, 0]));
         let totalQty = 0;
+        let totalAcquisValue = 0;
         let uniqueDescs = new Set();
 
         // Process Item Master: 1 row = 1 item/unit in a Location Zone.
@@ -2619,6 +2897,13 @@ async function fetchDashboardData() {
         dashboardItemRows.forEach(row => {
             const catId = getItemCategoryId(row);
             categoryStats[catId] = (categoryStats[catId] || 0) + 1;
+
+            const acquisValue = getNumericAcquisValue(getItemAcquisValue(row));
+            totalAcquisValue += acquisValue;
+            categoryAcquisStats[catId] = (categoryAcquisStats[catId] || 0) + acquisValue;
+
+            const useLifeGroup = getUseLifeGroupLabel(getItemUseLife(row));
+            if (useLifeGroup) useLifeGroups[useLifeGroup] += 1;
             
             const z = String(row.location_zone || '').trim() || 'Unknown';
             const prefix = getLocationZonePrefix(z);
@@ -2651,9 +2936,12 @@ async function fetchDashboardData() {
             totalQty: itemRes.count ?? totalQty,
             totalItems: uniqueDescs.size,
             totalCategories: catRes.count || 0,
+            totalAcquisValue: totalAcquisValue,
             statusCounts: statusCounts,
             prefixZones: prefixZones,
-            categoryStats: categoryStats
+            categoryStats: categoryStats,
+            categoryAcquisStats: categoryAcquisStats,
+            useLifeGroups: useLifeGroups
         };
 
         dashboardData = zones;

@@ -1368,7 +1368,7 @@ tbody tr {
 
 .analytics-row {
     display: grid;
-    grid-template-columns: 1fr 1.2fr 1fr;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 25px;
     margin-bottom: 35px;
 }
@@ -1399,7 +1399,21 @@ tbody tr {
     position: relative;
 }
 
-@media (max-width: 1200px) {
+.analytics-card-wide {
+    grid-column: 1 / -1;
+}
+
+.chart-container-wide {
+    height: 360px;
+}
+
+@media (max-width: 1300px) {
+    .analytics-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 780px) {
     .analytics-row {
         grid-template-columns: 1fr;
     }
