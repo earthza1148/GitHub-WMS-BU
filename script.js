@@ -486,6 +486,37 @@ function hideLoading() {
     if (overlay) overlay.style.display = 'none';
 }
 
+function capturePagePosition() {
+    const tableWrapper = document.querySelector('#mainContent .table-wrapper');
+    return {
+        windowX: window.scrollX,
+        windowY: window.scrollY,
+        tableScrollLeft: tableWrapper ? tableWrapper.scrollLeft : 0,
+        tableScrollTop: tableWrapper ? tableWrapper.scrollTop : 0
+    };
+}
+
+function restorePagePosition(position) {
+    if (!position) return;
+    const restore = () => {
+        window.scrollTo(position.windowX || 0, position.windowY || 0);
+        const tableWrapper = document.querySelector('#mainContent .table-wrapper');
+        if (tableWrapper) {
+            tableWrapper.scrollLeft = position.tableScrollLeft || 0;
+            tableWrapper.scrollTop = position.tableScrollTop || 0;
+        }
+    };
+
+    requestAnimationFrame(restore);
+    setTimeout(restore, 80);
+}
+
+async function reloadDataPreservingPosition(loader, page) {
+    const position = capturePagePosition();
+    await loader(page);
+    restorePagePosition(position);
+}
+
 let appDialogResolver = null;
 
 function initAppDialog() {
@@ -1211,7 +1242,7 @@ async function saveInventoryItem(mode) {
     try {
         if (mode === 'add') { itemData.id = id; itemData.create_id = currentUser.id; itemData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Inventory Master').insert([itemData]); if (error) throw error; showAppAlert('เพิ่มรายการใหม่สำเร็จ!', 'success'); }
         else { const { error } = await _supabase.from('Inventory Master').update(itemData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขข้อมูลสำเร็จ!', 'success'); }
-        closeModal('inventoryModal'); loadInventoryData();
+        closeModal('inventoryModal'); await reloadDataPreservingPosition(loadInventoryData, currentInventoryPage);
     } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
@@ -1459,7 +1490,7 @@ async function saveItemRecord(mode) {
             if (error) throw error;
             showAppAlert('แก้ไขไอเทมสำเร็จ!', 'success');
         }
-        closeModal('itemModal'); loadItemData();
+        closeModal('itemModal'); await reloadDataPreservingPosition(loadItemData, currentItemPage);
     } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
@@ -1615,7 +1646,7 @@ async function saveCategoryItem(mode) {
     try {
         if (mode === 'add') { catData.id = id; catData.create_id = currentUser.id; catData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('Category Master').insert([catData]); if (error) throw error; showAppAlert('เพิ่มหมวดหมู่ใหม่สำเร็จ!', 'success'); }
         else { const { error } = await _supabase.from('Category Master').update(catData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขหมวดหมู่สำเร็จ!', 'success'); }
-        closeModal('categoryModal'); loadCategoryData();
+        closeModal('categoryModal'); await reloadDataPreservingPosition(loadCategoryData, currentCategoryPage);
     } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
@@ -2023,7 +2054,7 @@ async function saveTransactionRecord(mode) {
             }
             showAppAlert('แก้ไขรายการและปรับยอดเรียบร้อย!', 'success');
         }
-        closeModal('transactionModal'); loadTransactionData();
+        closeModal('transactionModal'); await reloadDataPreservingPosition(loadTransactionData, currentTransactionPage);
     } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
@@ -2175,7 +2206,7 @@ async function saveUserItem(mode) {
     try {
         if (mode === 'add') { userData.id = id; userData.create_name = currentUser.name; userData.created_at = new Date().toLocaleString('th-TH'); const { error } = await _supabase.from('User Master').insert([userData]); if (error) throw error; showAppAlert('เพิ่มผู้ใช้ใหม่สำเร็จ!', 'success'); }
         else { const { error } = await _supabase.from('User Master').update(userData).eq('id', id); if (error) throw error; showAppAlert('แก้ไขข้อมูลผู้ใช้สำเร็จ!', 'success'); }
-        closeModal('userModal'); loadUserData();
+        closeModal('userModal'); await reloadDataPreservingPosition(loadUserData, currentUserPage);
     } catch (err) { showAppAlert('เกิดข้อผิดพลาด: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
@@ -2742,7 +2773,6 @@ async function openDashboardItemFromPopup(encodedAssetCode) {
 
     const cachedItem = dashboardItemRows.find(item => item.asset_code === assetCode);
     if (cachedItem) {
-        closeZonePopup();
         openItemModal(cachedItem, 'view');
         return;
     }
@@ -2751,7 +2781,6 @@ async function openDashboardItemFromPopup(encodedAssetCode) {
     try {
         const { data, error } = await _supabase.from('Item Master').select('*').eq('asset_code', assetCode).single();
         if (error) throw error;
-        closeZonePopup();
         openItemModal(data, 'view');
     } catch (err) {
         console.error('Error opening item from dashboard:', err);
