@@ -1810,6 +1810,104 @@ function filterTransactionTable() {
     }, 500);
 }
 
+const transactionLookupTimers = new WeakMap();
+let transactionZoneOptionsCache = null;
+
+function isTransactionRestoreStatus(status) {
+    return status === 'คืนของแล้ว' || status === 'ยกเลิกจอง';
+}
+
+function isTransactionWriteOff(item) {
+    return item?.movement_type === 'ตัดจำหน่าย' || item?.status === 'ตัดจำหน่าย';
+}
+
+function lookupItemMasterDebounced(input, type) {
+    const existingTimer = transactionLookupTimers.get(input);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    const value = input.value.trim();
+    if (!value) return;
+
+    const timer = setTimeout(() => lookupItemMaster(input, type), 350);
+    transactionLookupTimers.set(input, timer);
+}
+
+async function fetchTransactionZoneOptions() {
+    if (transactionZoneOptionsCache) return transactionZoneOptionsCache;
+
+    const zoneSet = new Set();
+    let from = 0;
+
+    while (true) {
+        const { data, error } = await _supabase
+            .from('Item Master')
+            .select('location_zone')
+            .order('location_zone', { ascending: true })
+            .range(from, from + FILTER_FETCH_SIZE - 1);
+
+        if (error) throw error;
+        (data || []).forEach(row => {
+            const zone = String(row.location_zone || '').trim();
+            if (zone) zoneSet.add(zone);
+        });
+
+        if (!data || data.length < FILTER_FETCH_SIZE) break;
+        from += FILTER_FETCH_SIZE;
+    }
+
+    transactionZoneOptionsCache = Array.from(zoneSet).sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    return transactionZoneOptionsCache;
+}
+
+function renderTransactionZoneOptions(zones) {
+    return zones.map(zone => `
+        <button type="button" class="transaction-zone-option" data-zone="${escapeAttribute(zone)}" onclick="selectTransactionZone(this.dataset.zone)">
+            ${escapeHtml(zone)}
+        </button>
+    `).join('');
+}
+
+function openTransactionZoneDropdown() {
+    const input = document.getElementById('tr_location');
+    const menu = document.getElementById('tr_location_zone_menu');
+    if (!input || input.disabled || !menu) return;
+    menu.classList.add('show');
+    filterTransactionZoneDropdown();
+}
+
+function closeTransactionZoneDropdown() {
+    document.getElementById('tr_location_zone_menu')?.classList.remove('show');
+}
+
+function filterTransactionZoneDropdown() {
+    const input = document.getElementById('tr_location');
+    const menu = document.getElementById('tr_location_zone_menu');
+    const empty = document.getElementById('tr_location_zone_empty');
+    if (!input || !menu) return;
+
+    const query = input.value.trim().toLowerCase();
+    let visibleCount = 0;
+    menu.querySelectorAll('.transaction-zone-option').forEach(option => {
+        const zone = String(option.dataset.zone || '').toLowerCase();
+        const matched = !query || zone.includes(query);
+        option.style.display = matched ? 'flex' : 'none';
+        if (matched) visibleCount += 1;
+    });
+
+    if (empty) empty.style.display = visibleCount === 0 ? 'block' : 'none';
+}
+
+function selectTransactionZone(zone) {
+    const input = document.getElementById('tr_location');
+    if (!input) return;
+    input.value = zone || '';
+    closeTransactionZoneDropdown();
+}
+
+document.addEventListener('click', closeTransactionZoneDropdown);
+
 function handleQuantityChange(qty) {
     const container = document.getElementById('transactionItemsContainer');
     if (!container) return;
@@ -1828,8 +1926,8 @@ function addTransactionItemRow(index) {
         <div class="modal-grid">
             <div class="form-group"><label>Category ID</label><input type="text" class="itm-id-cat" disabled required></div>
             <div class="form-group"><label>Category Name</label><input type="text" class="itm-cat-name" disabled></div>
-            <div class="form-group"><label>Asset Code</label><input type="text" class="itm-asset" onblur="lookupItemMaster(this, 'asset')" required></div>
-            <div class="form-group"><label>Inventory Code</label><input type="text" class="itm-inv" onblur="lookupItemMaster(this, 'inv')" required></div>
+            <div class="form-group"><label>Asset Code</label><input type="text" class="itm-asset" oninput="lookupItemMasterDebounced(this, 'asset')" onblur="lookupItemMaster(this, 'asset')" required></div>
+            <div class="form-group"><label>Inventory Code</label><input type="text" class="itm-inv" oninput="lookupItemMasterDebounced(this, 'inv')" onblur="lookupItemMaster(this, 'inv')" required></div>
             <div class="form-group full-width"><label>Description</label><input type="text" class="itm-desc" disabled required></div>
         </div>
     `;
@@ -1848,6 +1946,7 @@ async function lookupItemMaster(input, type) {
     const idCatInput = row.querySelector('.itm-id-cat') || row.querySelector('#edit_itm_id_cat');
     const catNameInput = row.querySelector('.itm-cat-name') || row.querySelector('#edit_itm_cat_name');
     const descInput = row.querySelector('.itm-desc') || row.querySelector('#edit_itm_desc');
+    const fromZoneInput = document.getElementById('tr_from_zone');
 
     try {
         let query = _supabase.from('Item Master').select('*');
@@ -1865,8 +1964,10 @@ async function lookupItemMaster(input, type) {
         }
 
         if (data) {
+            if (input.value.trim() !== value) return;
             if (idCatInput) idCatInput.value = data.category_id || '';
             if (descInput) descInput.value = data.description || '';
+            if (fromZoneInput && !fromZoneInput.disabled) fromZoneInput.value = data.location_zone || '';
             if (type === 'asset') {
                 if (invInput) invInput.value = data.inventory_code || '';
             } else {
@@ -1897,6 +1998,7 @@ async function openTransactionModal(item, mode) {
     let autoCode = "";
     if (mode === 'add') autoCode = generateTransactionCode();
     else if (mode === 'transfer') autoCode = generateTransactionCode("M");
+    const zoneOptions = await fetchTransactionZoneOptions();
 
     modal.innerHTML = `
         <div class="modal-content">
@@ -1917,7 +2019,19 @@ async function openTransactionModal(item, mode) {
                         </select>
                     </div>
                     <div class="form-group"><label>From Zone</label><input type="text" id="tr_from_zone" value="${item ? (item.from_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
-                    <div class="form-group"><label>To Location (โซนใหม่)</label><input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
+                    <div class="form-group">
+                        <label>To Location (โซนใหม่)</label>
+                        <div class="transaction-zone-select" onclick="event.stopPropagation()">
+                            <div class="transaction-zone-input-wrap">
+                                <input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" ${!isEditMode ? 'disabled' : ''} autocomplete="off" placeholder="พิมพ์เพื่อค้นหา Zone..." onfocus="openTransactionZoneDropdown()" oninput="openTransactionZoneDropdown(); filterTransactionZoneDropdown()">
+                                <button type="button" class="transaction-zone-toggle" ${!isEditMode ? 'disabled' : ''} onclick="openTransactionZoneDropdown()">▾</button>
+                            </div>
+                            <div id="tr_location_zone_menu" class="transaction-zone-menu">
+                                ${renderTransactionZoneOptions(zoneOptions)}
+                                <div id="tr_location_zone_empty" class="transaction-zone-empty">ไม่พบ Zone</div>
+                            </div>
+                        </div>
+                    </div>
                     <div class="form-group">
                         <label>Status</label>
                         <select id="tr_status" ${(!isEditMode || mode === 'transfer') ? 'disabled' : ''}>
@@ -1925,6 +2039,7 @@ async function openTransactionModal(item, mode) {
                             <option value="คืนของแล้ว" ${item && item.status === 'คืนของแล้ว' ? 'selected' : ''}>คืนของแล้ว</option>
                             <option value="จัดสรรอยู่" ${item && item.status === 'จัดสรรอยู่' ? 'selected' : ''}>จัดสรรอยู่</option>
                             <option value="จอง" ${item && item.status === 'จอง' ? 'selected' : ''}>จอง</option>
+                            <option value="ยกเลิกจอง" ${item && item.status === 'ยกเลิกจอง' ? 'selected' : ''}>ยกเลิกจอง</option>
                             <option value="ตัดจำหน่าย" ${item && item.status === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
                             <option value="ย้ายของ" ${(mode === 'transfer' || (item && item.status === 'ย้ายของ')) ? 'selected' : ''}>ย้ายของ</option>
                         </select>
@@ -1958,8 +2073,8 @@ async function openTransactionModal(item, mode) {
                         ${mode === 'edit' ? `<div id="editSingleItemFields" style="background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 12px;"><p style="font-weight: 600; margin-bottom: 10px;">แก้ไขรายการที่เลือก (${item.asset_code})</p><div class="modal-grid">
                             <div class="form-group"><label>Category ID</label><input type="text" id="edit_itm_id_cat" value="${item.id_category || ''}" disabled></div>
                             <div class="form-group"><label>Category Name</label><input type="text" id="edit_itm_cat_name" value="${item.category || ''}" disabled></div>
-                            <div class="form-group"><label>Asset Code</label><input type="text" id="edit_itm_asset" value="${item.asset_code || ''}" onblur="lookupItemMaster(this, 'asset')"></div>
-                            <div class="form-group"><label>Inventory Code</label><input type="text" id="edit_itm_inv" value="${item.inventory_code || ''}" onblur="lookupItemMaster(this, 'inv')"></div>
+                            <div class="form-group"><label>Asset Code</label><input type="text" id="edit_itm_asset" value="${item.asset_code || ''}" oninput="lookupItemMasterDebounced(this, 'asset')" onblur="lookupItemMaster(this, 'asset')"></div>
+                            <div class="form-group"><label>Inventory Code</label><input type="text" id="edit_itm_inv" value="${item.inventory_code || ''}" oninput="lookupItemMasterDebounced(this, 'inv')" onblur="lookupItemMaster(this, 'inv')"></div>
                             <div class="form-group full-width"><label>Description</label><input type="text" id="edit_itm_desc" value="${item.description || ''}" disabled></div>
                         </div></div>` : ''}
                     `}
@@ -2039,8 +2154,9 @@ async function saveTransactionRecord(mode) {
                     await updateInventoryStock(fromZone, row.description, -1, row.id_category, null, true);
                     await updateInventoryStock(toLocation, row.description, 1, row.id_category, sourceImage);
                 } else {
-                    await updateItemMasterStatus(row.asset_code, row.inventory_code, false);
-                    await updateInventoryStock(fromZone, row.description, -1, row.id_category);
+                    const shouldRestoreItem = isTransactionRestoreStatus(status);
+                    await updateItemMasterStatus(row.asset_code, row.inventory_code, shouldRestoreItem);
+                    await updateInventoryStock(fromZone, row.description, shouldRestoreItem ? 1 : -1, row.id_category);
                 }
             }
             showAppAlert(`${mode === 'transfer' ? 'ย้ายของ' : 'เพิ่มรายการ'} สำเร็จ!`, 'success');
@@ -2049,12 +2165,14 @@ async function saveTransactionRecord(mode) {
             const updateData = { ...commonData, id_category: document.getElementById('edit_itm_id_cat').value, category: document.getElementById('edit_itm_cat_name').value, asset_code: document.getElementById('edit_itm_asset').value, inventory_code: document.getElementById('edit_itm_inv').value, description: document.getElementById('edit_itm_desc').value };
             const { error } = await _supabase.from('Transection Inventory').update(updateData).eq('id', oldItem.id);
             if (error) throw error;
-            if (status === 'คืนของแล้ว' && oldItem.status !== 'คืนของแล้ว') {
+            const oldWasRestored = isTransactionRestoreStatus(oldItem.status);
+            const shouldRestoreItem = isTransactionRestoreStatus(status);
+            if (shouldRestoreItem && !oldWasRestored) {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, true);
                 await updateInventoryStock(fromZone, updateData.description, 1, updateData.id_category);
             } else if (status === 'จอง' && oldItem.status !== 'จอง') {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, false);
-            } else if (status !== 'คืนของแล้ว' && oldItem.status === 'คืนของแล้ว') {
+            } else if (!shouldRestoreItem && oldWasRestored) {
                 await updateItemMasterStatus(updateData.asset_code, updateData.inventory_code, false);
                 await updateInventoryStock(fromZone, updateData.description, -1, updateData.id_category);
             }
@@ -2067,7 +2185,26 @@ async function saveTransactionRecord(mode) {
 async function deleteTransactionRecord(id) {
     if (!await showAppConfirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?', { confirmText: 'ลบรายการ' })) return;
     showLoading();
-    try { const { error } = await _supabase.from('Transection Inventory').delete().eq('id', id); if (error) throw error; showAppAlert('ลบรายการสำเร็จ!', 'success'); if (document.getElementById('transactionModal').style.display === 'flex') closeModal('transactionModal'); loadTransactionData(); }
+    try {
+        const { data: oldItem, error: fetchError } = await _supabase
+            .from('Transection Inventory')
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (fetchError) throw fetchError;
+
+        const { error } = await _supabase.from('Transection Inventory').delete().eq('id', id);
+        if (error) throw error;
+
+        if (isTransactionWriteOff(oldItem)) {
+            await updateItemMasterStatus(oldItem.asset_code, oldItem.inventory_code, true);
+            await updateInventoryStock(oldItem.from_zone, oldItem.description, 1, oldItem.id_category);
+        }
+
+        showAppAlert('ลบรายการสำเร็จ!', 'success');
+        if (document.getElementById('transactionModal').style.display === 'flex') closeModal('transactionModal');
+        await reloadDataPreservingPosition(loadTransactionData, currentTransactionPage);
+    }
     catch (err) { showAppAlert('ลบข้อมูลไม่สำเร็จ: ' + err.message, 'error'); } finally { hideLoading(); }
 }
 
