@@ -104,8 +104,23 @@ function updateDropdownPosition(dropdown, btn) {
     if (!dropdown || !btn) return;
     const rect = btn.getBoundingClientRect();
     const dropdownWidth = 280; // Match CSS
+    const viewportPadding = 12;
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding);
+    const spaceAbove = Math.max(0, rect.top - viewportPadding);
+    const minUsableHeight = 260;
+    const minDropdownHeight = 180;
+    const maxDropdownHeight = Math.max(minDropdownHeight, window.innerHeight - (viewportPadding * 2));
+    const shouldOpenAbove = spaceBelow < minUsableHeight && spaceAbove > spaceBelow;
+    const availableSpace = shouldOpenAbove ? spaceAbove : spaceBelow;
+    const dropdownHeight = Math.min(maxDropdownHeight, Math.max(minDropdownHeight, availableSpace));
     
-    dropdown.style.top = (rect.bottom + 5) + 'px';
+    dropdown.style.bottom = 'auto';
+    const preferredTop = shouldOpenAbove ? rect.top - dropdownHeight - 5 : rect.bottom + 5;
+    const maxTop = window.innerHeight - viewportPadding - dropdownHeight;
+    const top = Math.min(Math.max(viewportPadding, preferredTop), Math.max(viewportPadding, maxTop));
+    dropdown.style.top = `${top}px`;
+    dropdown.style.maxHeight = `${dropdownHeight}px`;
+
     let leftPos = rect.left;
     
     // Prevent overflow right
@@ -370,6 +385,24 @@ function clearFilter(view, column) {
     applyFilter(view);
 }
 
+function clearAllFilters(view) {
+    activeFilters[view] = {};
+    if (view === 'items') activeSort.items = { column: null, direction: 'asc' };
+    document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
+    document.querySelectorAll(`#mainContent .filter-btn`).forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll(`#mainContent .search-input`).forEach(input => { input.value = ''; });
+
+    if (view === 'items') renderItemView();
+    else if (view === 'inventory') loadInventoryData(0);
+    else if (view === 'category') loadCategoryData(0);
+    else if (view === 'transactions') loadTransactionData(0);
+    else if (view === 'users') loadUserData(0);
+}
+
+function renderClearFilterButton(view) {
+    return `<button type="button" class="btn-clear-all-filters" onclick="clearAllFilters('${view}')">Clear Filter</button>`;
+}
+
 // Helper to get Table Name
 function getTableNameFromView(view) {
     const map = {
@@ -399,11 +432,19 @@ window.addEventListener('click', () => {
     document.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('show'));
 });
 
+let modalPointerDownOnOverlay = false;
+
+document.addEventListener('pointerdown', (event) => {
+    const target = event.target;
+    modalPointerDownOnOverlay = !!(target && target.classList && target.classList.contains('modal-overlay'));
+});
+
 document.addEventListener('click', (event) => {
     const modal = event.target;
-    if (modal && modal.classList && modal.classList.contains('modal-overlay')) {
+    if (modal && modal.classList && modal.classList.contains('modal-overlay') && modalPointerDownOnOverlay && !isTextSelected()) {
         closeModal(modal.id);
     }
+    modalPointerDownOnOverlay = false;
 });
 
 document.addEventListener('keydown', (event) => {
@@ -817,7 +858,10 @@ function renderInventoryView() {
                 <input type="text" id="searchZone" class="search-input" placeholder="🔍 ค้นหาด้วย Zone..." oninput="filterInventoryTable()">
                 <input type="text" id="searchDesc" class="search-input" placeholder="🔍 ค้นหาด้วย Description..." oninput="filterInventoryTable()">
             </div>
+            <div class="controls-actions">
+                ${renderClearFilterButton('inventory')}
             ${hasPermission ? `<button class="btn-add" onclick="openInventoryModal(null, 'add')"><span>➕</span> Add Inventory</button>` : ''}
+            </div>
         </div>
         <div class="table-wrapper">
             <table>
@@ -1269,7 +1313,10 @@ function renderItemView() {
                 <input type="text" id="searchAssetInventory" class="search-input" placeholder="🔍 Asset or Inventory Code..." oninput="filterItemTable()">
                 <input type="text" id="searchItemDescCat" class="search-input" placeholder="🔍 Desc or Category ID..." oninput="filterItemTable()">
             </div>
+            <div class="controls-actions">
+                ${renderClearFilterButton('items')}
             ${hasPermission ? `<button class="btn-add" onclick="openItemModal(null, 'add')"><span>➕</span> Add Item</button>` : ''}
+            </div>
         </div>
         <div class="table-wrapper">
             <table>
@@ -1531,7 +1578,10 @@ function renderCategoryView() {
                 <input type="text" id="searchCatId" class="search-input" placeholder="🔍 ค้นหาด้วย ID..." oninput="filterCategoryTable()">
                 <input type="text" id="searchCatName" class="search-input" placeholder="🔍 ค้นหาด้วยชื่อหมวดหมู่..." oninput="filterCategoryTable()">
             </div>
+            <div class="controls-actions">
+                ${renderClearFilterButton('category')}
             ${hasPermission ? `<button class="btn-add" onclick="openCategoryModal(null, 'add')"><span>➕</span> Add Category</button>` : ''}
+            </div>
         </div>
         <div class="table-wrapper">
             <table>
@@ -1685,7 +1735,7 @@ function getFilterHeader(view, column, label) {
                 </div>
                 <div class="filter-options"></div>
                 <div class="filter-actions">
-                    <button class="btn-filter-clear" onclick="clearFilter('${view}', '${column}')">Clear</button>
+                    <button class="btn-filter-clear" onclick="clearFilter('${view}', '${column}')">Clear Filter</button>
                     <button class="btn-filter-apply" onclick="applyFilter('${view}')">Apply</button>
                 </div>
             </div>
@@ -1702,7 +1752,8 @@ function renderTransactionView() {
                 <input type="text" id="searchTransCode" class="search-input" placeholder="🔍 Search Code..." oninput="filterTransactionTable()">
                 <input type="text" id="searchTransAsset" class="search-input" placeholder="🔍 Asset or Inventory Code..." oninput="filterTransactionTable()">
             </div>
-            <div style="display: flex; gap: 10px;">
+            <div class="controls-actions">
+                ${renderClearFilterButton('transactions')}
                 ${hasPermission ? `
                     <button class="btn-add" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);" onclick="exportTransactionsToExcel()"><span>📊</span> Export to Excel</button>
                     <button class="btn-add" style="background: linear-gradient(135deg, #0984e3 0%, #3a7bd5 100%);" onclick="openTransactionModal(null, 'transfer')"><span>🔄</span> ย้ายของ</button>
@@ -1872,7 +1923,8 @@ function renderTransactionZoneOptions(zones) {
 function openTransactionZoneDropdown() {
     const input = document.getElementById('tr_location');
     const menu = document.getElementById('tr_location_zone_menu');
-    if (!input || input.disabled || !menu) return;
+    const typeSelect = document.getElementById('tr_type');
+    if (!input || input.disabled || !menu || typeSelect?.value !== 'ย้ายของ') return;
     menu.classList.add('show');
     filterTransactionZoneDropdown();
 }
@@ -1907,6 +1959,29 @@ function selectTransactionZone(zone) {
 }
 
 document.addEventListener('click', closeTransactionZoneDropdown);
+
+function handleTransactionMovementTypeChange() {
+    const typeSelect = document.getElementById('tr_type');
+    const toLocationGroup = document.getElementById('tr_to_location_group');
+    const locationInput = document.getElementById('tr_location');
+    const locationToggle = document.querySelector('#tr_to_location_group .transaction-zone-toggle');
+    const statusSelect = document.getElementById('tr_status');
+    const movementType = typeSelect?.value || '';
+    const isTransfer = movementType === 'ย้ายของ';
+    const canEditLocation = locationInput?.dataset.editable === 'true';
+
+    if (toLocationGroup) toLocationGroup.classList.toggle('dropdown-hidden', !isTransfer);
+    if (locationInput) {
+        locationInput.disabled = !canEditLocation;
+    }
+    if (locationToggle) locationToggle.disabled = !isTransfer || !canEditLocation;
+    if (!isTransfer) closeTransactionZoneDropdown();
+
+    if (statusSelect && !statusSelect.disabled) {
+        if (isTransfer) statusSelect.value = 'ย้ายของ';
+        else if (statusSelect.value === 'ย้ายของ') statusSelect.value = 'กำลังยืม';
+    }
+}
 
 function handleQuantityChange(qty) {
     const container = document.getElementById('transactionItemsContainer');
@@ -1999,6 +2074,8 @@ async function openTransactionModal(item, mode) {
     if (mode === 'add') autoCode = generateTransactionCode();
     else if (mode === 'transfer') autoCode = generateTransactionCode("M");
     const zoneOptions = await fetchTransactionZoneOptions();
+    const selectedMovementType = mode === 'transfer' ? 'ย้ายของ' : (item?.movement_type || 'ยืม');
+    const showToLocationDropdown = selectedMovementType === 'ย้ายของ';
 
     modal.innerHTML = `
         <div class="modal-content">
@@ -2011,20 +2088,20 @@ async function openTransactionModal(item, mode) {
                     <div class="form-group"><label>Transaction Code</label><input type="text" id="tr_code" value="${item ? (item.code || '') : autoCode}" disabled required></div>
                     <div class="form-group">
                         <label>Movement Type</label>
-                        <select id="tr_type" ${(!isEditMode || mode === 'transfer') ? 'disabled' : ''}>
+                        <select id="tr_type" onchange="handleTransactionMovementTypeChange()" ${(!isEditMode || mode === 'transfer') ? 'disabled' : ''}>
                             <option value="ยืม" ${item && item.movement_type === 'ยืม' ? 'selected' : ''}>ยืม</option>
                             <option value="จัดสรร" ${item && item.movement_type === 'จัดสรร' ? 'selected' : ''}>จัดสรร</option>
                             <option value="ตัดจำหน่าย" ${item && item.movement_type === 'ตัดจำหน่าย' ? 'selected' : ''}>ตัดจำหน่าย</option>
                             <option value="ย้ายของ" ${(mode === 'transfer' || (item && item.movement_type === 'ย้ายของ')) ? 'selected' : ''}>ย้ายของ</option>
                         </select>
                     </div>
-                    <div class="form-group"><label>From Zone</label><input type="text" id="tr_from_zone" value="${item ? (item.from_zone || '') : ''}" ${!isEditMode ? 'disabled' : ''}></div>
-                    <div class="form-group">
+                    <div class="form-group"><label>From Zone</label><input type="text" id="tr_from_zone" class="readonly-field" value="${item ? (item.from_zone || '') : ''}" readonly></div>
+                    <div class="form-group transaction-to-location-group ${showToLocationDropdown ? '' : 'dropdown-hidden'}" id="tr_to_location_group">
                         <label>To Location (โซนใหม่)</label>
                         <div class="transaction-zone-select" onclick="event.stopPropagation()">
                             <div class="transaction-zone-input-wrap">
-                                <input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" ${!isEditMode ? 'disabled' : ''} autocomplete="off" placeholder="พิมพ์เพื่อค้นหา Zone..." onfocus="openTransactionZoneDropdown()" oninput="openTransactionZoneDropdown(); filterTransactionZoneDropdown()">
-                                <button type="button" class="transaction-zone-toggle" ${!isEditMode ? 'disabled' : ''} onclick="openTransactionZoneDropdown()">▾</button>
+                                <input type="text" id="tr_location" value="${item ? (item.to_location || '') : ''}" data-editable="${isEditMode ? 'true' : 'false'}" ${!isEditMode ? 'disabled' : ''} autocomplete="off" placeholder="พิมพ์ To Location..." onfocus="openTransactionZoneDropdown()" oninput="openTransactionZoneDropdown(); filterTransactionZoneDropdown()">
+                                <button type="button" class="transaction-zone-toggle" ${(!isEditMode || !showToLocationDropdown) ? 'disabled' : ''} onclick="openTransactionZoneDropdown()">▾</button>
                             </div>
                             <div id="tr_location_zone_menu" class="transaction-zone-menu">
                                 ${renderTransactionZoneOptions(zoneOptions)}
@@ -2092,6 +2169,7 @@ async function openTransactionModal(item, mode) {
             if (trStatus) trStatus.value = 'ย้ายของ';
         }
     }
+    handleTransactionMovementTypeChange();
 }
 
 // Helper to update Item Master Status/Zone
@@ -2131,12 +2209,14 @@ async function saveTransactionRecord(mode) {
     showLoading();
     const code = document.getElementById('tr_code').value;
     const fromZone = document.getElementById('tr_from_zone').value;
-    const toLocation = document.getElementById('tr_location').value;
     const status = document.getElementById('tr_status').value;
     const movementType = (mode === 'transfer') ? 'ย้ายของ' : document.getElementById('tr_type').value;
+    const toLocation = (document.getElementById('tr_location')?.value || '').trim();
     const commonData = { code: code, movement_type: movementType, from_zone: fromZone, to_location: toLocation, status: status, name_lender: document.getElementById('tr_lender')?.value || null, name_borrower: document.getElementById('tr_borrower')?.value || null, lending_date: document.getElementById('tr_lender_date')?.value || null, date_returned: document.getElementById('tr_return_date')?.value || null, remark: document.getElementById('tr_remark').value, edit_id: currentUser.id, edit_at: new Date().toLocaleString('th-TH') };
 
     try {
+        if (movementType === 'ย้ายของ' && !toLocation) throw new Error('กรุณาเลือก To Location (โซนใหม่)');
+
         if (mode === 'add' || mode === 'transfer') {
             const itemContainers = document.querySelectorAll('.transaction-item-row');
             if (itemContainers.length === 0) throw new Error('กรุณาเพิ่มอย่างน้อย 1 รายการ');
@@ -2217,7 +2297,10 @@ function renderUserView() {
                 <input type="text" id="searchUserId" class="search-input" placeholder="🔍 ค้นหาด้วย User ID..." oninput="filterUserTable()">
                 <input type="text" id="searchUserName" class="search-input" placeholder="🔍 ค้นหาด้วยชื่อ..." oninput="filterUserTable()">
             </div>
+            <div class="controls-actions">
+                ${renderClearFilterButton('users')}
             ${hasPermission ? `<button class="btn-add" onclick="openUserModal(null, 'add')"><span>➕</span> Add User</button>` : ''}
+            </div>
         </div>
         <div class="table-wrapper">
             <table>
