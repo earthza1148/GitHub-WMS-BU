@@ -158,7 +158,7 @@ async function populateFilterOptions(view, column) {
     const tableName = getTableNameFromView(view);
     const dbColumn = getDbColumnFromViewColumn(view, column);
 
-    optionsContainer.innerHTML = '<div style="font-size: 0.8rem; padding: 10px; color: #666;">กำลังโหลด...</div>';
+    optionsContainer.innerHTML = renderFilterOptionsSkeleton();
 
     try {
         const data = await fetchAllFilterColumnValues(view, column, tableName, dbColumn);
@@ -525,6 +525,75 @@ function showLoading() {
 function hideLoading() {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) overlay.style.display = 'none';
+}
+
+function renderSkeletonBlock(className = 'skeleton-line', style = '') {
+    return `<span class="${className}"${style ? ` style="${style}"` : ''}></span>`;
+}
+
+function setTableSkeleton(tableBody, colSpan, rowCount = 8) {
+    if (!tableBody) return;
+    const widthPattern = ['72%', '88%', '64%', '78%', '52%', '70%', '46%', '82%', '58%', '68%'];
+    tableBody.innerHTML = Array.from({ length: rowCount }, (_, rowIndex) => `
+        <tr class="skeleton-table-row">
+            ${Array.from({ length: colSpan }, (_, colIndex) => {
+                const width = widthPattern[(rowIndex + colIndex) % widthPattern.length];
+                const isThumb = colIndex === 4 && colSpan >= 8;
+                const content = isThumb
+                    ? renderSkeletonBlock('skeleton-thumb')
+                    : renderSkeletonBlock('skeleton-line', `width: ${width};`);
+                return `<td>${content}</td>`;
+            }).join('')}
+        </tr>
+    `).join('');
+}
+
+function renderFilterOptionsSkeleton(rowCount = 7) {
+    return Array.from({ length: rowCount }, (_, index) => `
+        <div class="filter-option skeleton-filter-option">
+            ${renderSkeletonBlock('skeleton-checkbox')}
+            ${renderSkeletonBlock('skeleton-line', `width: ${index % 3 === 0 ? '82%' : index % 3 === 1 ? '62%' : '74%'};`)}
+        </div>
+    `).join('');
+}
+
+function renderDashboardSkeleton() {
+    const statCards = Array.from({ length: 4 }, () => `
+        <div class="stat-card modern-card skeleton-dashboard-card">
+            ${renderSkeletonBlock('skeleton-circle')}
+            <div class="card-info">
+                ${renderSkeletonBlock('skeleton-line', 'width: 54%;')}
+                ${renderSkeletonBlock('skeleton-line skeleton-line-lg', 'width: 72%;')}
+            </div>
+            ${renderSkeletonBlock('skeleton-line', 'width: 100%; height: 8px;')}
+        </div>
+    `).join('');
+
+    const analyticsCards = Array.from({ length: 5 }, (_, index) => `
+        <div class="analytics-card ${index === 4 ? 'analytics-card-wide' : ''}">
+            ${renderSkeletonBlock('skeleton-line', 'width: 42%; height: 18px;')}
+            <div class="skeleton-chart">
+                ${renderSkeletonBlock('skeleton-chart-bar', 'height: 72%;')}
+                ${renderSkeletonBlock('skeleton-chart-bar', 'height: 48%;')}
+                ${renderSkeletonBlock('skeleton-chart-bar', 'height: 84%;')}
+                ${renderSkeletonBlock('skeleton-chart-bar', 'height: 58%;')}
+                ${renderSkeletonBlock('skeleton-chart-bar', 'height: 66%;')}
+            </div>
+        </div>
+    `).join('');
+
+    return `
+        <div class="dashboard-stats-grid">${statCards}</div>
+        <div class="dashboard-filter-strip skeleton-filter-strip">
+            ${renderSkeletonBlock('skeleton-line', 'width: 160px; height: 36px;')}
+            ${renderSkeletonBlock('skeleton-line', 'width: 120px; height: 36px;')}
+            ${renderSkeletonBlock('skeleton-line', 'width: 140px; height: 36px;')}
+        </div>
+        <div class="analytics-row">${analyticsCards}</div>
+        <div class="layout-viewport skeleton-layout-viewport">
+            <div class="skeleton-layout-map"></div>
+        </div>
+    `;
 }
 
 function capturePagePosition() {
@@ -970,7 +1039,7 @@ async function loadInventoryData(page = 0) {
     const searchZone = document.getElementById('searchZone')?.value || '';
     const searchDesc = document.getElementById('searchDesc')?.value || '';
 
-    tableBody.innerHTML = '<tr><td colspan="8" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
+    setTableSkeleton(tableBody, 8);
     try {
         let query = _supabase.from('Inventory Master').select('*', { count: 'exact' });
         
@@ -1429,7 +1498,7 @@ async function loadItemData(page = 0) {
 
     const hasPermission = currentUser.rank === 'Master' || currentUser.rank === 'Admin';
     const colSpan = hasPermission ? 10 : 9;
-    tableBody.innerHTML = `<tr><td colspan="${colSpan}" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>`;
+    setTableSkeleton(tableBody, colSpan);
     try {
         try {
             await syncItemUseLifeForToday();
@@ -1685,7 +1754,7 @@ async function loadCategoryData(page = 0) {
     const searchId = document.getElementById('searchCatId')?.value || '';
     const searchName = document.getElementById('searchCatName')?.value || '';
 
-    tableBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
+    setTableSkeleton(tableBody, 3);
     try {
         let query = _supabase.from('Category Master').select('*', { count: 'exact' });
         
@@ -1870,7 +1939,7 @@ async function loadTransactionData(page = 0) {
     const searchCode = document.getElementById('searchTransCode')?.value || '';
     const searchAsset = document.getElementById('searchTransAsset')?.value || '';
 
-    tableBody.innerHTML = '<tr><td colspan="10" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
+    setTableSkeleton(tableBody, 10);
     try {
         let query = _supabase.from('Transection Inventory').select('*', { count: 'exact' });
         
@@ -2408,7 +2477,7 @@ async function loadUserData(page = 0) {
     const searchId = document.getElementById('searchUserId')?.value || '';
     const searchName = document.getElementById('searchUserName')?.value || '';
 
-    tableBody.innerHTML = '<tr><td colspan="7" style="text-align:center;">กำลังโหลดข้อมูล...</td></tr>';
+    setTableSkeleton(tableBody, 7);
     try { 
         let query = _supabase.from('User Master').select('*', { count: 'exact' });
         
@@ -2949,7 +3018,8 @@ async function renderDashboardView(options = {}) {
     const refreshData = options.refreshData !== false;
     
     if (refreshData) {
-        await fetchDashboardData();
+        mainContent.innerHTML = renderDashboardSkeleton();
+        await fetchDashboardData({ useOverlay: false });
     } else {
         buildDashboardStats();
     }
@@ -3399,9 +3469,10 @@ async function fetchAllDashboardItemRows() {
     return { data: allRows, count: exactCount || allRows.length };
 }
 
-async function fetchDashboardData() {
+async function fetchDashboardData(options = {}) {
+    const useOverlay = options.useOverlay !== false;
     try {
-        showLoading();
+        if (useOverlay) showLoading();
         dashboardData = {};
         dashboardItemRows = [];
         dashboardTransactionRows = [];
@@ -3420,7 +3491,7 @@ async function fetchDashboardData() {
     } catch (err) {
         console.error('Error fetching dashboard data:', err);
     } finally {
-        hideLoading();
+        if (useOverlay) hideLoading();
     }
 }
 

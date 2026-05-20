@@ -1363,6 +1363,119 @@ tbody tr {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* --- Skeleton Loading --- */
+.skeleton-line,
+.skeleton-thumb,
+.skeleton-circle,
+.skeleton-checkbox,
+.skeleton-chart-bar,
+.skeleton-layout-map {
+    display: inline-block;
+    position: relative;
+    overflow: hidden;
+    background: #eef2f7;
+    background-image: linear-gradient(90deg, #eef2f7 0%, #f8fbff 48%, #eef2f7 100%);
+    background-size: 220% 100%;
+    animation: skeletonShimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes skeletonShimmer {
+    0% { background-position: 120% 0; }
+    100% { background-position: -120% 0; }
+}
+
+.skeleton-line {
+    height: 14px;
+    min-width: 44px;
+    border-radius: 999px;
+    vertical-align: middle;
+}
+
+.skeleton-line-lg {
+    height: 28px;
+    margin-top: 10px;
+}
+
+.skeleton-thumb {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+}
+
+.skeleton-circle {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+}
+
+.skeleton-checkbox {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    flex: 0 0 auto;
+}
+
+.skeleton-table-row td {
+    pointer-events: none;
+}
+
+.skeleton-table-row:hover td {
+    background: #ffffff;
+    transform: none;
+}
+
+.skeleton-filter-option {
+    cursor: default;
+    pointer-events: none;
+}
+
+.skeleton-dashboard-card {
+    background: #ffffff !important;
+    box-shadow: var(--shadow-premium);
+    gap: 16px;
+}
+
+.skeleton-dashboard-card .card-info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.skeleton-filter-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 18px 0;
+}
+
+.skeleton-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 220px;
+    padding: 28px 12px 8px;
+}
+
+.skeleton-chart-bar {
+    width: 100%;
+    min-width: 28px;
+    border-radius: 12px 12px 4px 4px;
+}
+
+.skeleton-layout-viewport {
+    min-height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.skeleton-layout-map {
+    width: min(900px, 92%);
+    height: 300px;
+    border-radius: 28px;
+}
+
 /* --- App Dialog --- */
 .app-dialog-overlay {
     position: fixed;
