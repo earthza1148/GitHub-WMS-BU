@@ -668,6 +668,12 @@ function generateTransactionCode(prefix = "") {
 
 // ฟังก์ชันทดสอบการเชื่อมต่อเบื้องต้น
 async function testConnection() {
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (!session) {
+        console.log("รอให้ผู้ใช้ล็อกอินก่อนทดสอบ User Master เพราะ RLS ต้องใช้ role authenticated");
+        return;
+    }
+
     const { data, error } = await _supabase.from('User Master').select('count', { count: 'exact', head: true });
     if (error) {
         console.error("Connection Error:", error);
@@ -692,6 +698,69 @@ async function updateLoginTime(userId) {
     }
 }
 
+async function getAuthenticatedUserMaster(authUser) {
+    const uid = String(authUser?.id || '').trim();
+    if (!uid) throw new Error('ไม่พบ UID จาก Supabase Auth');
+
+    const { data, error } = await _supabase
+        .from('User Master')
+        .select('*')
+        .eq('uid', uid)
+        .maybeSingle();
+
+    if (error) throw new Error(`ดึงข้อมูล User Master ไม่สำเร็จ: ${error.message}`);
+    if (!data) {
+        throw new Error(`ล็อกอินสำเร็จแล้ว แต่ไม่พบข้อมูลใน User Master ที่ uid = ${uid}`);
+    }
+
+    console.log('ตัวอย่างข้อมูลจาก User Master หลังล็อกอิน:', data);
+    return data;
+}
+
+async function signInWithUserId(userId, password) {
+    const functionUrl = `${SUPABASE_URL}/functions/v1/login-with-user-id`;
+    let response;
+
+    try {
+        response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': SUPABASE_KEY
+            },
+            body: JSON.stringify({ user_id: userId, password })
+        });
+    } catch (err) {
+        console.error('Edge Function request failed:', err);
+        throw new Error('เรียก Edge Function ไม่ได้ กรุณาเช็กว่า deploy login-with-user-id แล้ว และปิด Verify JWT แล้ว');
+    }
+
+    let data = null;
+    const responseText = await response.text();
+    try {
+        data = responseText ? JSON.parse(responseText) : null;
+    } catch (err) {
+        console.error('Edge Function returned non-JSON:', responseText);
+    }
+
+    if (!response.ok) {
+        const message = data?.error || data?.message || responseText || `Edge Function error ${response.status}`;
+        throw new Error(message);
+    }
+    if (data?.error) throw new Error(data.error);
+    if (!data?.session?.access_token || !data?.session?.refresh_token) {
+        throw new Error('เข้าสู่ระบบไม่สำเร็จ: ไม่พบ session จาก Supabase');
+    }
+
+    const { error: sessionError } = await _supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token
+    });
+    if (sessionError) throw new Error(sessionError.message);
+
+    return data.profile || await getAuthenticatedUserMaster(data.user);
+}
+
 if (loginForm) {
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -701,29 +770,36 @@ if (loginForm) {
         loginBtn.disabled = true;
         messageDiv.innerText = '';
         try {
-            const { data, error } = await _supabase.from('User Master').select('*').eq('user_id', username).single();
-            if (error) {
-                if (error.code === 'PGRST116') throw new Error('ไม่พบ User ID นี้ในระบบ');
-                throw new Error(`ข้อผิดพลาด: ${error.message}`);
-            }
-            if (String(data.password) === String(password)) {
-                if (data.status === false) throw new Error('บัญชีนี้ถูกระงับการใช้งาน');
-                currentUser = data;
-                localStorage.setItem('wms_user', JSON.stringify(data));
-                await updateLoginTime(data.id);
-                showDashboard(data);
-            } else { throw new Error('รหัสผ่านไม่ถูกต้อง'); }
-        } catch (err) { messageDiv.innerText = err.message; } finally { loginBtn.innerText = 'เข้าสู่ระบบ'; loginBtn.disabled = false; }
+            const userMaster = await signInWithUserId(username, password);
+            if (userMaster.status === false) throw new Error('บัญชีนี้ถูกระงับการใช้งาน');
+
+            currentUser = userMaster;
+            localStorage.setItem('wms_user', JSON.stringify(userMaster));
+            await updateLoginTime(userMaster.id);
+            showDashboard(userMaster);
+        } catch (err) {
+            messageDiv.innerText = err.message;
+        } finally { loginBtn.innerText = 'เข้าสู่ระบบ'; loginBtn.disabled = false; }
     });
 }
 
 window.onload = async () => {
     initLoading();
-    const savedUser = localStorage.getItem('wms_user');
-    if (savedUser) {
-        currentUser = JSON.parse(savedUser);
-        await updateLoginTime(currentUser.id);
-        showDashboard(currentUser);
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (session?.user) {
+        try {
+            currentUser = await getAuthenticatedUserMaster(session.user);
+            localStorage.setItem('wms_user', JSON.stringify(currentUser));
+            await updateLoginTime(currentUser.id);
+            showDashboard(currentUser);
+        } catch (err) {
+            console.error('Session restore failed:', err);
+            localStorage.removeItem('wms_user');
+            await _supabase.auth.signOut();
+            if (messageDiv) messageDiv.innerText = err.message;
+        }
+    } else {
+        localStorage.removeItem('wms_user');
     }
 };
 
@@ -2445,7 +2521,11 @@ async function deleteUserItem(id) {
 }
 
 function closeModal(modalId) { document.getElementById(modalId).style.display = 'none'; }
-function logout() { localStorage.removeItem('wms_user'); location.reload(); }
+async function logout() {
+    await _supabase.auth.signOut();
+    localStorage.removeItem('wms_user');
+    location.reload();
+}
 
 // --- Dashboard View Implementation ---
 let dashboardData = {};
