@@ -24,6 +24,7 @@ const ITEM_PAGE_SIZE = 200;
 const FILTER_FETCH_SIZE = 1000;
 const USE_LIFE_DB_COLUMN = 'Use Life';
 const USE_LIFE_SYNC_STORAGE_KEY = 'wms_use_life_sync_date';
+const THEME_STORAGE_KEY = 'wms_theme';
 let currentInventoryPage = 0;
 let currentItemPage = 0;
 let currentCategoryPage = 0;
@@ -43,6 +44,40 @@ let activeFilters = {
 let activeSort = {
     items: { column: null, direction: 'asc' }
 };
+
+function getStoredTheme() {
+    return localStorage.getItem(THEME_STORAGE_KEY) || 'light';
+}
+
+function setAppTheme(theme) {
+    const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+    document.body.classList.toggle('dark-mode', normalizedTheme === 'dark');
+    localStorage.setItem(THEME_STORAGE_KEY, normalizedTheme);
+
+    const toggle = document.getElementById('themeToggle');
+    if (toggle) {
+        toggle.setAttribute('aria-pressed', normalizedTheme === 'dark' ? 'true' : 'false');
+        toggle.setAttribute('title', normalizedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    }
+}
+
+function toggleAppTheme() {
+    setAppTheme(document.body.classList.contains('dark-mode') ? 'light' : 'dark');
+}
+
+function ensureThemeToggle() {
+    if (document.getElementById('themeToggle')) return;
+
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.id = 'themeToggle';
+    toggle.className = 'theme-toggle';
+    toggle.setAttribute('aria-label', 'Toggle dark mode');
+    toggle.onclick = toggleAppTheme;
+    toggle.innerHTML = '<span class="theme-toggle-icon theme-toggle-sun"></span><span class="theme-toggle-knob"></span><span class="theme-toggle-icon theme-toggle-moon"></span>';
+    document.body.appendChild(toggle);
+    setAppTheme(getStoredTheme());
+}
 
 function getSortIndicator(view, column) {
     const sort = activeSort[view];
@@ -751,6 +786,8 @@ async function testConnection() {
     }
 }
 testConnection();
+setAppTheme(getStoredTheme());
+ensureThemeToggle();
 
 // ฟังก์ชันอัปเดตเวลา Login ในฐานข้อมูล
 async function updateLoginTime(userId) {
@@ -941,6 +978,8 @@ function showDashboard(user) {
         </div>
     </div>
     `;
+    setAppTheme(getStoredTheme());
+    ensureThemeToggle();
     initLoading();
     renderCurrentView();
 }
