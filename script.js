@@ -79,6 +79,18 @@ function ensureThemeToggle() {
     setAppTheme(getStoredTheme());
 }
 
+function togglePasswordVisibility() {
+    const passwordInput = document.getElementById('password');
+    const toggle = document.getElementById('passwordToggle');
+    if (!passwordInput || !toggle) return;
+
+    const shouldShow = passwordInput.type === 'password';
+    passwordInput.type = shouldShow ? 'text' : 'password';
+    toggle.classList.toggle('is-visible', shouldShow);
+    toggle.setAttribute('aria-label', shouldShow ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+    toggle.setAttribute('aria-pressed', shouldShow ? 'true' : 'false');
+}
+
 function getSortIndicator(view, column) {
     const sort = activeSort[view];
     if (!sort || sort.column !== column) return '';

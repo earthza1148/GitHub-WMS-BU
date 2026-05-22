@@ -40,6 +40,119 @@ body {
     color: var(--text-main);
 }
 
+body,
+body::before,
+.container,
+.login-card,
+.sidebar,
+.sidebar-header,
+.dashboard-container,
+.dashboard-header,
+.table-wrapper,
+thead,
+th,
+td,
+.modal-content,
+.modal-header,
+.analytics-card,
+.legend-card,
+.pagination-container,
+.app-dialog-card,
+.image-preview-container,
+.popup-summary,
+.popup-item-card,
+.side-popup,
+.filter-dropdown,
+.filter-sort-actions,
+.filter-actions,
+.filter-option,
+.layout-btn,
+.pagination-btn,
+.nav-item,
+.menu-toggle,
+.menu-toggle span,
+.status-badge,
+.input-group input,
+.search-input,
+.filter-search,
+.form-group input,
+.form-group select,
+.form-group textarea,
+button,
+a,
+p,
+span,
+label,
+small,
+h1,
+h2,
+h3,
+strong {
+    transition:
+        background-color 0.32s ease,
+        background 0.32s ease,
+        background-image 0.32s ease,
+        border-color 0.32s ease,
+        color 0.32s ease,
+        box-shadow 0.32s ease,
+        text-shadow 0.32s ease,
+        opacity 0.32s ease,
+        transform 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body,
+    body::before,
+    .container,
+    .login-card,
+    .sidebar,
+    .sidebar-header,
+    .dashboard-container,
+    .dashboard-header,
+    .table-wrapper,
+    thead,
+    th,
+    td,
+    .modal-content,
+    .modal-header,
+    .analytics-card,
+    .legend-card,
+    .pagination-container,
+    .app-dialog-card,
+    .image-preview-container,
+    .popup-summary,
+    .popup-item-card,
+    .side-popup,
+    .filter-dropdown,
+    .filter-sort-actions,
+    .filter-actions,
+    .filter-option,
+    .layout-btn,
+    .pagination-btn,
+    .nav-item,
+    .menu-toggle,
+    .menu-toggle span,
+    .status-badge,
+    .input-group input,
+    .search-input,
+    .filter-search,
+    .form-group input,
+    .form-group select,
+    .form-group textarea,
+    button,
+    a,
+    p,
+    span,
+    label,
+    small,
+    h1,
+    h2,
+    h3,
+    strong {
+        transition: none;
+    }
+}
+
 /* --- Animated Background Shapes --- */
 .bg-shape {
     position: fixed;
@@ -240,6 +353,73 @@ body {
     background: #fff;
     border-color: var(--bu-purple);
     box-shadow: 0 10px 25px rgba(58, 46, 91, 0.08);
+}
+
+.password-input-wrap {
+    position: relative;
+}
+
+.password-input-wrap input {
+    padding-right: 3.8rem;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    width: 38px;
+    height: 38px;
+    transform: translateY(-50%);
+    border: 1px solid rgba(58, 46, 91, 0.10);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.78);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.password-toggle::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 12px;
+    width: 20px;
+    height: 12px;
+    border: 2px solid var(--bu-purple);
+    border-radius: 50%;
+}
+
+.password-toggle::after {
+    content: '';
+    position: absolute;
+    left: 16px;
+    top: 16px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--bu-purple);
+}
+
+.password-toggle-line {
+    position: absolute;
+    left: 9px;
+    top: 18px;
+    width: 22px;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--bu-orange);
+    transform: rotate(-38deg);
+    opacity: 1;
+    transition: var(--transition-smooth);
+}
+
+.password-toggle.is-visible .password-toggle-line {
+    opacity: 0;
+}
+
+.password-toggle:hover {
+    background: #ffffff;
+    border-color: rgba(58, 46, 91, 0.22);
+    box-shadow: 0 8px 18px rgba(58, 46, 91, 0.10);
 }
 
 #loginBtn {
@@ -3261,6 +3441,25 @@ body.dark-mode input::placeholder,
 body.dark-mode textarea::placeholder,
 body.dark-mode .search-input::placeholder {
     color: #7f8da3;
+}
+
+body.dark-mode .password-toggle {
+    background: #172033;
+    border-color: rgba(221, 214, 254, 0.24);
+}
+
+body.dark-mode .password-toggle::before {
+    border-color: #ddd6fe;
+}
+
+body.dark-mode .password-toggle::after {
+    background: #ddd6fe;
+}
+
+body.dark-mode .password-toggle:hover {
+    background: #221a3a;
+    border-color: rgba(233, 213, 255, 0.56);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
 }
 
 body.dark-mode .form-group input:disabled,

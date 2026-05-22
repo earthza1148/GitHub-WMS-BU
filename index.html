@@ -30,7 +30,12 @@
                 </div>
                 <div class="input-group">
                     <label for="password">Password</label>
-                    <input type="password" id="password" placeholder="กรอกรหัสผ่าน" required>
+                    <div class="password-input-wrap">
+                        <input type="password" id="password" placeholder="กรอกรหัสผ่าน" required>
+                        <button type="button" id="passwordToggle" class="password-toggle" aria-label="แสดงรหัสผ่าน" onclick="togglePasswordVisibility()">
+                            <span class="password-toggle-line"></span>
+                        </button>
+                    </div>
                 </div>
                 <button type="submit" id="loginBtn">เข้าสู่ระบบ</button>
             </form>
