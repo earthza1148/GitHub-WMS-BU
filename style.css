@@ -2603,6 +2603,25 @@ tbody tr {
     gap: 15px;
 }
 
+.popup-section-title {
+    margin-bottom: 20px;
+    color: var(--bu-purple);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+.popup-match-count {
+    font-size: 0.8rem;
+    background: #f0f3ff;
+    color: #3a7bd5;
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
 .popup-item-card {
     background: #fff;
     padding: 20px;
@@ -3425,6 +3444,7 @@ body.dark-mode .modal-header {
 }
 
 body.dark-mode .sidebar-header,
+body.dark-mode .side-popup-header,
 body.dark-mode thead,
 body.dark-mode .table-wrapper thead th,
 body.dark-mode .row-number-cell,
@@ -3555,6 +3575,46 @@ body.dark-mode .table-password-toggle:hover {
     background: #221a3a;
     border-color: rgba(233, 213, 255, 0.56);
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+}
+
+body.dark-mode .side-popup-header {
+    border-color: var(--line-soft);
+}
+
+body.dark-mode .side-popup-header h3 {
+    color: #f8fafc;
+    -webkit-text-fill-color: #f8fafc;
+}
+
+body.dark-mode .close-popup-btn {
+    background: #172033;
+    border: 1px solid rgba(221, 214, 254, 0.24);
+    color: #ddd6fe;
+}
+
+body.dark-mode .close-popup-btn:hover {
+    background: #ef7d35;
+    border-color: #ef7d35;
+    color: #ffffff;
+}
+
+body.dark-mode .popup-section-title {
+    color: #e9d5ff;
+}
+
+body.dark-mode .popup-match-count {
+    background: #dbeafe;
+    color: #2563eb;
+}
+
+body.dark-mode .dashboard-zone-item-meta {
+    background: #172033;
+    border-color: rgba(148, 163, 184, 0.24);
+}
+
+body.dark-mode .dashboard-zone-item-thumb {
+    background: #172033;
+    border-color: rgba(148, 163, 184, 0.24);
 }
 
 body.dark-mode .form-group input:disabled,

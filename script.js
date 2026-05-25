@@ -3586,9 +3586,9 @@ function openZonePopup(zoneName) {
                    placeholder="ค้นหา Asset / Inventory / Description..." oninput="filterPopupItems()">
         </div>
 
-        <h4 style="margin-bottom: 20px; color: var(--bu-purple); display: flex; justify-content: space-between; align-items: center;">
+        <h4 class="popup-section-title">
             รายการสิ่งของ
-            <span style="font-size: 0.8rem; background: #f0f3ff; color: #3a7bd5; padding: 4px 10px; border-radius: 8px;" id="popupMatchCount">
+            <span class="popup-match-count" id="popupMatchCount">
                 ${items.length.toLocaleString()} รายการ
             </span>
         </h4>
