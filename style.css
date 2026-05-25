@@ -422,6 +422,77 @@ strong {
     box-shadow: 0 8px 18px rgba(58, 46, 91, 0.10);
 }
 
+.user-password-cell {
+    min-width: 150px;
+    white-space: nowrap;
+}
+
+.user-password-mask,
+.user-password-value {
+    display: inline-block;
+    min-width: 76px;
+    font-family: 'Poppins', 'Kanit', sans-serif;
+    font-weight: 700;
+    letter-spacing: 1px;
+    vertical-align: middle;
+}
+
+.user-password-mask[hidden],
+.user-password-value[hidden] {
+    display: none;
+}
+
+.table-password-toggle {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    margin-left: 8px;
+    vertical-align: middle;
+    border: 1px solid rgba(58, 46, 91, 0.10);
+    border-radius: 10px;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+}
+
+.table-password-toggle::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 10px;
+    width: 17px;
+    height: 10px;
+    border: 2px solid var(--bu-purple);
+    border-radius: 50%;
+}
+
+.table-password-toggle::after {
+    content: '';
+    position: absolute;
+    left: 13px;
+    top: 14px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--bu-purple);
+}
+
+.table-password-toggle .password-toggle-line {
+    left: 7px;
+    top: 15px;
+    width: 19px;
+}
+
+.table-password-toggle.is-visible .password-toggle-line {
+    opacity: 0;
+}
+
+.table-password-toggle:hover {
+    background: #ffffff;
+    border-color: rgba(58, 46, 91, 0.24);
+    box-shadow: 0 8px 18px rgba(58, 46, 91, 0.10);
+}
+
 #loginBtn {
     width: 100%;
     padding: 1.2rem;
@@ -3457,6 +3528,30 @@ body.dark-mode .password-toggle::after {
 }
 
 body.dark-mode .password-toggle:hover {
+    background: #221a3a;
+    border-color: rgba(233, 213, 255, 0.56);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+}
+
+body.dark-mode .user-password-mask,
+body.dark-mode .user-password-value {
+    color: #f8fafc;
+}
+
+body.dark-mode .table-password-toggle {
+    background: #172033;
+    border-color: rgba(221, 214, 254, 0.24);
+}
+
+body.dark-mode .table-password-toggle::before {
+    border-color: #ddd6fe;
+}
+
+body.dark-mode .table-password-toggle::after {
+    background: #ddd6fe;
+}
+
+body.dark-mode .table-password-toggle:hover {
     background: #221a3a;
     border-color: rgba(233, 213, 255, 0.56);
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);

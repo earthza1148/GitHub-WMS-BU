@@ -91,6 +91,22 @@ function togglePasswordVisibility() {
     toggle.setAttribute('aria-pressed', shouldShow ? 'true' : 'false');
 }
 
+function toggleUserPasswordVisibility(event, button) {
+    event.stopPropagation();
+    const cell = button.closest('.user-password-cell');
+    if (!cell) return;
+
+    const mask = cell.querySelector('.user-password-mask');
+    const value = cell.querySelector('.user-password-value');
+    const shouldShow = button.getAttribute('aria-pressed') !== 'true';
+
+    if (mask) mask.hidden = shouldShow;
+    if (value) value.hidden = !shouldShow;
+    button.classList.toggle('is-visible', shouldShow);
+    button.setAttribute('aria-label', shouldShow ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+    button.setAttribute('aria-pressed', shouldShow ? 'true' : 'false');
+}
+
 function getSortIndicator(view, column) {
     const sort = activeSort[view];
     if (!sort || sort.column !== column) return '';
@@ -2570,13 +2586,16 @@ function renderUserTable(data, totalCount) {
     const tableBody = document.getElementById('userTableBody');
     if (!tableBody) return;
     tableBody.innerHTML = '';
+    userMasterData = data || [];
     
-    data.forEach(item => {
+    userMasterData.forEach(item => {
         const tr = document.createElement('tr');
         tr.onclick = () => {
             if (!isTextSelected()) openUserModal(item, 'view');
         };
-        tr.innerHTML = `<td>${item.id}</td><td>${item.name || '-'}</td><td>${item.user_id || '-'}</td><td>${item.password || '****'}</td><td>${item.rank || '-'}</td><td><span class="status-badge ${item.status ? 'status-active' : 'status-inactive'}">${item.status ? 'Active' : 'Inactive'}</span></td><td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openUserModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteUserItem('${item.id}')">🗑</button></div></td>`;
+        const passwordValue = String(item.password || '');
+        const passwordDisplay = passwordValue ? escapeHtml(passwordValue) : '-';
+        tr.innerHTML = `<td>${item.id}</td><td>${item.name || '-'}</td><td>${item.user_id || '-'}</td><td onclick="event.stopPropagation()" class="user-password-cell"><span class="user-password-mask">${passwordValue ? '*******' : '-'}</span><span class="user-password-value" hidden>${passwordDisplay}</span>${passwordValue ? `<button type="button" class="table-password-toggle" aria-label="แสดงรหัสผ่าน" aria-pressed="false" onclick="toggleUserPasswordVisibility(event, this)"><span class="password-toggle-line"></span></button>` : ''}</td><td>${item.rank || '-'}</td><td><span class="status-badge ${item.status ? 'status-active' : 'status-inactive'}">${item.status ? 'Active' : 'Inactive'}</span></td><td onclick="event.stopPropagation()"><div class="action-icons"><button class="icon-btn edit-icon" onclick="openUserModal(${JSON.stringify(item).replace(/"/g, '&quot;')}, 'edit')">✎</button><button class="icon-btn delete-icon" onclick="deleteUserItem('${item.id}')">🗑</button></div></td>`;
         tableBody.appendChild(tr);
     });
 
